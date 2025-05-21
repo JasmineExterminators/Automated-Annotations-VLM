@@ -1,49 +1,10 @@
 from google import genai
 from google.genai import types
-import time
 
 
 client = genai.Client(api_key="AIzaSyA3JNDI0RArQ2V7X_eF_P6Y3DX8gP5hGDQ")
 
 VIDEO_PATH = "C:/Users/cajas/Downloads/libero_100/libero_90_videos/STUDY_SCENE4_pick_up_the_book_on_the_right_and_place_it_under_the_cabinet_shelf_demo/demo_49.mp4"
-# video_bytes = open(VIDEO_PATH, 'rb').read()
-
-# response = client.models.generate_content(
-#     model='models/gemini-2.0-flash',
-#     contents=types.Content(
-#         parts=[
-#             types.Part(
-#                 inline_data=types.Blob(data=video_bytes, mime_type='video/mp4')
-#             ),
-#             types.Part(text='''This is a video of a robot completing a task.
-#                                 The left side shows the front view and the right side shows the view on the claw of the robot
-#                                 The goal is to pick up the book and place it in the right compartment of the caddy
-#                                 Can you segment this task with action commands and its reasoning (written in first person), and time stamps
-#                                 for the start and end times of an action? 
-#                                 (don't need to explain every single frame, just segment it into actions as you see fit)''')
-#         ]
-#     )
-# )
- 
-
-# myfile = client.files.upload(file=VIDEO_PATH)
-
-
-# file_id = myfile.id
-# status = myfile.state
-# while status != "ACTIVE":
-#     print(f"File status: {status}. Waiting for it to become ACTIVE...")
-#     time.sleep(2)
-#     myfile = client.files.get(file_id)
-#     status = myfile.state
-
-# response = client.models.generate_content(
-#     model="gemini-2.0-flash", contents=[myfile, "Summarize this video. Then create a quiz with an answer key based on the information in this video."]
-# )
-
-# print(response.text)
-
-
 
 # Only for videos of size <20Mb
 video_bytes = open(VIDEO_PATH, 'rb').read()
@@ -55,7 +16,11 @@ response = client.models.generate_content(
             types.Part(
                 inline_data=types.Blob(data=video_bytes, mime_type='video/mp4')
             ),
-            types.Part(text='Please summarize the video in 3 sentences.')
+            types.Part(text=''' This is a video of the robot completing the following goal: to pick up the book and place it in the right compartment of the caddy
+                                The left side of the video shows the front view and the right side shows the view on the claw of the robot
+
+                                Can you segment this task with action commands and its reasoning (written in first person), and give the start and end times (exact to one tenth of a second) of an action? 
+                            ''')
         ]
     )
 )
