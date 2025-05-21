@@ -3,7 +3,7 @@ from pathlib import Path
 import sys
 
 # ←– EDIT THIS to the path of the folder containing your .txt annotation files:
-ANNOTATIONS_FOLDER = Path("libero-90-txtC")
+ANNOTATIONS_FOLDER = Path("C:/Users/wuad3/Downloads/30FPS_ANNOTATIONS")
 
 # 30 fps → 20 fps scaling factor
 FACTOR = 1.5
