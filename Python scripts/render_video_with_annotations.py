@@ -3,6 +3,23 @@ import numpy as np
 import os
 import json
 
+def wrap_text(text, font, font_scale, thickness, max_width):
+    """Splits text into lines so each line fits within max_width pixels."""
+    words = text.split()
+    lines = []
+    current_line = ""
+    for word in words:
+        test_line = current_line + (" " if current_line else "") + word
+        (w, _), _ = cv2.getTextSize(test_line, font, font_scale, thickness)
+        if w > max_width and current_line:
+            lines.append(current_line)
+            current_line = word
+        else:
+            current_line = test_line
+    if current_line:
+        lines.append(current_line)
+    return lines
+
 def overlay_text(
     frame_count,
     cap,
@@ -51,27 +68,27 @@ def overlay_text(
 
             # Position text top left
             x, y = 10, text_height + 10 # 10 pixels from left, 10 pixels below text height
-
-            # Draw main text
-            cv2.putText(
-                frame, # Frame is already BGR from cap.read()
-                text_to_overlay,
-                (x, y),
-                font,
-                font_scale,
-                font_color,
-                thickness,
-                cv2.LINE_AA # Anti-aliasing for smoother text
-            )
+            max_text_width = width - 20 # 10px padding on each side
+            lines = wrap_text(text_to_overlay, font, font_scale, thickness, max_text_width)
+            for i, line in enumerate(lines):
+                y_line = y + i*(text_height + baseline + 5)
+                # Draw one line of main text
+                cv2.putText(
+                    frame, # Frame is already BGR from cap.read()
+                    line,
+                    (x, y_line),
+                    font,
+                    font_scale,
+                    font_color,
+                    thickness,
+                    cv2.LINE_AA # Anti-aliasing for smoother text
+                )
 
         out.write(frame) # Write the modified frame to the output video
 
         frame_count += 1
 
     
-
-# def wrap_text(text, font, )
-
 
 
 if __name__ == "__main__":
