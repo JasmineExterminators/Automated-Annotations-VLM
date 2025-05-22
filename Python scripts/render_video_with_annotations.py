@@ -28,7 +28,9 @@ def overlay_text(
     width,
     height,
     total_frames,
-    duration_sec,
+    annotations,
+    OUTPUT_FRAME_WIDTH,
+    OUTPUT_FRAME_HEIGHT,
     font=cv2.FONT_HERSHEY_PLAIN,
     font_scale=0.5,
     font_color=(0, 255, 255),  # BGR format: (Blue, Green, Red) - Yellow
@@ -55,6 +57,16 @@ def overlay_text(
 
         current_time_sec = frame_count / fps
 
+        canvas = np.zeros((OUTPUT_FRAME_HEIGHT, OUTPUT_FRAME_WIDTH, 3), dtype=np.uint8)
+        # verifying that the og frame is 128 by 128 (if not, resize)
+        small_frame = cv2.resize(frame, (256, 128))
+
+        # Place the small frame in the bottom right corner
+        y_offset = OUTPUT_FRAME_HEIGHT - 128
+        x_offset = OUTPUT_FRAME_WIDTH - 256
+        canvas[y_offset:y_offset+128, x_offset:x_offset+256] = small_frame
+
+
         annot = annotations[0]
         action_words = annot["action"]
         reasoning_words = annot["reasoning"]
@@ -79,7 +91,7 @@ def overlay_text(
                 y_line = y + i*(text_height + baseline + 5)
                 # Draw one line of main text
                 cv2.putText(
-                    frame, # Frame is already BGR from cap.read()
+                    canvas, # Frame is already BGR from cap.read()
                     line,
                     (x, y_line),
                     font,
@@ -89,7 +101,7 @@ def overlay_text(
                     cv2.LINE_AA # Anti-aliasing for smoother text
                 )
 
-            out.write(frame) # Write the modified frame to the output video
+            out.write(canvas) # Write the modified frame to the output video
 
             frame_count += 1
         else:
@@ -100,6 +112,9 @@ if __name__ == "__main__":
     G_ANNOTATIONS_PATH = "C:/Users/cajas/Downloads/demo_0.json"
     OG_VIDEO_PATH = "C:/Users/cajas/Downloads/demo_0(17).mp4"
     ANNOTED_VIDEO_PATH = "C:/Users/cajas/Downloads/demo_0(18).mp4"
+
+    OUTPUT_FRAME_WIDTH = 512
+    OUTPUT_FRAME_HEIGHT = 512
     
     # Open vid file
     print(f"Starting video annotation overlay for '{OG_VIDEO_PATH}'...")
@@ -122,7 +137,7 @@ if __name__ == "__main__":
     # On some systems, 'avc1' (H.264) might work if ffmpeg is properly linked.
     # If this fails, try 'XVID'.
     fourcc = cv2.VideoWriter_fourcc(*'mp4v') # Codec for MP4
-    out = cv2.VideoWriter(ANNOTED_VIDEO_PATH, fourcc, fps, (width, height))
+    out = cv2.VideoWriter(ANNOTED_VIDEO_PATH, fourcc, fps, (OUTPUT_FRAME_WIDTH, OUTPUT_FRAME_HEIGHT))
     if not out.isOpened():
         print(f"Error: Could not open video writer for '{ANNOTED_VIDEO_PATH}'. Check codec or permissions.")
         cap.release()
@@ -142,7 +157,9 @@ if __name__ == "__main__":
         width,
         height,
         total_frames,
-        annotations)
+        annotations,
+        OUTPUT_FRAME_WIDTH,
+        OUTPUT_FRAME_HEIGHT)
 
 
     # Release everything when done
