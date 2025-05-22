@@ -29,9 +29,6 @@ def overlay_text(
     height,
     total_frames,
     duration_sec,
-    text_to_overlay,
-    start_time_sec,  # When text appears (seconds)
-    end_time_sec,    # When text disappears (seconds)
     font=cv2.FONT_HERSHEY_PLAIN,
     font_scale=0.5,
     font_color=(0, 255, 255),  # BGR format: (Blue, Green, Red) - Yellow
@@ -53,22 +50,30 @@ def overlay_text(
     """
     while True:
         ret, frame = cap.read()
-
         if not ret: # hopefully not error and signifies end of vid
             break
 
         current_time_sec = frame_count / fps
 
-        # Check if current time is within annot time
-        if start_time_sec <= current_time_sec <= end_time_sec:
-            # Calculate text size to help with positioning
-            (text_width, text_height), baseline = cv2.getTextSize(
-                text_to_overlay, font, font_scale, thickness
-            )
+        annot = annotations[0]
+        action_words = annot["action"]
+        reasoning_words = annot["reasoning"]
+        annot_start_time = annot["start"]
+        annot_end_time = annot["end"]
+        annot_duration_time = annot["duration"]
 
-            # Position text top left
-            x, y = 10, text_height + 10 # 10 pixels from left, 10 pixels below text height
-            max_text_width = width - 20 # 10px padding on each side
+        text_to_overlay = f"ACTION: {action_words}  REASONING: {reasoning_words}"
+
+        # Calculate text size to help with positioning
+        (text_width, text_height), baseline = cv2.getTextSize(
+            text_to_overlay, font, font_scale, thickness
+        )
+
+        # Position text top left
+        x, y = 10, text_height + 10 # 10 pixels from left, 10 pixels below text height
+        max_text_width = width - 20 # 10px padding on each side
+
+        if current_time_sec <= annot_end_time:
             lines = wrap_text(text_to_overlay, font, font_scale, thickness, max_text_width)
             for i, line in enumerate(lines):
                 y_line = y + i*(text_height + baseline + 5)
@@ -84,12 +89,12 @@ def overlay_text(
                     cv2.LINE_AA # Anti-aliasing for smoother text
                 )
 
-        out.write(frame) # Write the modified frame to the output video
+            out.write(frame) # Write the modified frame to the output video
 
-        frame_count += 1
-
-    
-
+            frame_count += 1
+        else:
+            if len(annotations) != 1:
+                annotations.pop(0)
 
 if __name__ == "__main__":
     G_ANNOTATIONS_PATH = "C:/Users/cajas/Downloads/demo_0.json"
@@ -127,27 +132,17 @@ if __name__ == "__main__":
     with open(G_ANNOTATIONS_PATH, "r", encoding="utf-8") as f:
         annotations = json.load(f)
 
-    for annot in annotations:
-        action_words = annot["action"]
-        reasoning_words = annot["reasoning"]
-        annot_start_time = annot["start"]
-        annot_end_time = annot["end"]
-        annot_duration_time = annot["duration"]
+        
 
-        text_to_overlay = f"ACTION: {action_words}  REASONING: {reasoning_words}"
-
-        overlay_text(
-            frame_count,
-            cap,
-            out,
-            fps, 
-            width,
-            height,
-            total_frames,
-            duration_sec,
-            text_to_overlay,
-            annot_start_time,
-            annot_end_time)
+    overlay_text(
+        frame_count,
+        cap,
+        out,
+        fps, 
+        width,
+        height,
+        total_frames,
+        annotations)
 
 
     # Release everything when done
