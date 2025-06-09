@@ -1,6 +1,4 @@
 # batch mode / async python for gemini
-# better prompt
-# match reference annotation with actually annnoated pdf
 
 from google import genai
 from pydantic import BaseModel
@@ -10,40 +8,32 @@ import json
 import os
 from pathlib import Path
 from fpdf import FPDF
-# import tempfile
-# import glob
-# import io
 
 
  
 client = genai.Client(api_key="AIzaSyA3JNDI0RArQ2V7X_eF_P6Y3DX8gP5hGDQ")
 FRAME_GAP = 10
-VIDEOS_PATH = "C:/Users/wuad3/Downloads/TEST"
+VIDEOS_PATH = "C:/Users/wuad3/Downloads/Test_1"
 PHOTO_X = 10
 PHOTO_Y = 10
 PHOTO_W = 190
 
 
-# def find(name, path):
-#     for root, dirs, files in os.walk(path):
-#         if name in files:
-#             return root / name
+# File tree 
+# folder
+#    folder
+#      videos
 
 
 with os.scandir(VIDEOS_PATH) as tasks:
     for task in tasks:
         task_dir = Path(VIDEOS_PATH) / task.name
         with os.scandir(task_dir) as demos:
-            txt_file_name = next(f for f in os.listdir(Path(VIDEOS_PATH) / task.name) if f.endswith('.txt'))
-            annotation_path = Path(VIDEOS_PATH) / task.name / txt_file_name
-            # annotation_demo_number = annotation_path.substring
             for demo in demos:
                 if demo.name.endswith(".mp4"):
                     demo_path = Path(VIDEOS_PATH) / task.name / demo.name
                     demo_name = os.path.splitext(os.path.basename(demo_path))[0]
                     
-                    reference_vid_name = next(f for f in os.listdir(Path(VIDEOS_PATH) / task.name) if f.endswith())
-
                     # 1. Convert video frames to pdf
                     cap = cv2.VideoCapture(demo_path)
 
@@ -77,19 +67,11 @@ with os.scandir(VIDEOS_PATH) as tasks:
                     pdf.output(pdf_filename)
                     
         
-                    # 2. Feed pdf, reference annotation, prompt to Gemini
+                    # 2. Feed pdf, prompt to Gemini
                     input_pdf = client.files.upload(file = pdf_filename)
                     
                     # get the length of the video to help gemini
                     length = frame_count / 20
-                    
-                    # prompt = """These are frames of the state of the robot throughout a part of this task being done.
-                    #             The left side shows the front view and the right side shows the view on the claw of the robot
-                    #             The goal is to pick up the book and place it in the right compartment of the caddy
-                    #             These frames are 0.4 seconds apart from each other.
-                    #             Can you segment this task with action commands and its reasoning (written in first person), 
-                    #             with reference to the frames, in order to determine the start and end times of an action? 
-                    #             (don't need to explain every single frame, just segment it into actions as you see fit)"""
                     
                     prompt = f"""Can you segment the video provided in the pdf into detailed actions and detailed reasonings the robot is performing? The the goal of the robot's task is: {task.name}.  You should record the action the robot is performing, a reasoning for the action, a start time of the action, end time of the action, and duration of the action.
                     
@@ -97,9 +79,6 @@ with os.scandir(VIDEOS_PATH) as tasks:
                                        
                     The text file is the reference annotation of written by a human. Use this reference annotation to guide your style and formatting. The actions and reasonings should be more detailed and lengthy than the human reference. The reasonings must be written in first person, thinking as if you are the robot. 
                  """
-
-                            
-                    reference_annotation = client.files.upload(file = annotation_path)
 
                     # 3. save
   
@@ -113,7 +92,7 @@ with os.scandir(VIDEOS_PATH) as tasks:
                     print("sending to gemini...")
                     response = client.models.generate_content(
                         model="gemini-2.0-flash",
-                        contents=[input_pdf, prompt, reference_annotation],
+                        contents=[input_pdf, prompt],
                         config={
                             "response_mime_type": "application/json",
                             "response_schema": list[Annotation]
