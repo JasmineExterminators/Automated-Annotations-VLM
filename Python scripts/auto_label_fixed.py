@@ -1,8 +1,6 @@
 # batch mode / async python for gemini
-# fix json 
 # better prompt
 # match reference annotation with actually annnoated pdf
-
 
 from google import genai
 from pydantic import BaseModel
@@ -12,9 +10,9 @@ import json
 import os
 from pathlib import Path
 from fpdf import FPDF
-import tempfile
-import glob
-import io
+# import tempfile
+# import glob
+# import io
 
 
  
@@ -26,10 +24,10 @@ PHOTO_Y = 10
 PHOTO_W = 190
 
 
-def find(name, path):
-    for root, dirs, files in os.walk(path):
-        if name in files:
-            return root / name
+# def find(name, path):
+#     for root, dirs, files in os.walk(path):
+#         if name in files:
+#             return root / name
 
 
 with os.scandir(VIDEOS_PATH) as tasks:
@@ -38,16 +36,13 @@ with os.scandir(VIDEOS_PATH) as tasks:
         with os.scandir(task_dir) as demos:
             txt_file_name = next(f for f in os.listdir(Path(VIDEOS_PATH) / task.name) if f.endswith('.txt'))
             annotation_path = Path(VIDEOS_PATH) / task.name / txt_file_name
+            # annotation_demo_number = annotation_path.substring
             for demo in demos:
                 if demo.name.endswith(".mp4"):
                     demo_path = Path(VIDEOS_PATH) / task.name / demo.name
                     demo_name = os.path.splitext(os.path.basename(demo_path))[0]
-                    # annotation_path = find(f"{task.name}_demo*", ANNOTATIONS_PATH)
-                    # search_pattern = os.path.join(ANNOTATIONS_PATH, f"{task.name}_demo*.txt")
-                    # annotation_path = glob.glob(search_pattern)[0]
-                    # annotation_name = os.path.splitext(os.path.basename(annotation_path))[0]
-                    # annotation_path = "C:/Users/wuad3/Downloads/TEST_ANNOTATIONS/KITCHEN_SCENE1_open_the_bottom_drawer_of_the_cabinet_demo_robyn_demo_0.txt"
-                    # annotation_name = "KITCHEN_SCENE1_open_the_bottom_drawer_of_the_cabinet_demo_robyn_demo_0"
+                    
+                    reference_vid_name = next(f for f in os.listdir(Path(VIDEOS_PATH) / task.name) if f.endswith())
 
                     # 1. Convert video frames to pdf
                     cap = cv2.VideoCapture(demo_path)
@@ -96,13 +91,12 @@ with os.scandir(VIDEOS_PATH) as tasks:
                     #             with reference to the frames, in order to determine the start and end times of an action? 
                     #             (don't need to explain every single frame, just segment it into actions as you see fit)"""
                     
-                    prompt = f"""Can you segment the video provided in the pdf into detailed actions and detailed reasonings the robot is performing? You should record the action the robot is performing, a reasoning for the action, a start time of the action, end time of the action, and duration of the action.
+                    prompt = f"""Can you segment the video provided in the pdf into detailed actions and detailed reasonings the robot is performing? The the goal of the robot's task is: {task.name}.  You should record the action the robot is performing, a reasoning for the action, a start time of the action, end time of the action, and duration of the action.
                     
-                    The pdf shows frames of the state of the robot throughout a part of a task being done. The left side shows the front view and the right side shows the view on the grippers of the robot. Each frame is spaced 0.05 seconds apart. This video has a length of {length} seconds.
+                    The first pdf named {demo_name}_frames.pdf shows frames of the state of the robot throughout a task being done. The left side shows the front view and the right side shows the view on the grippers of the robot. Each frame is spaced 0.05 seconds apart. This video has a length of {length} seconds.
                                        
-                    The text file is the reference annotation of the task written by a human. Use this reference annotation to guide your style and formatting. The actions and reasonings should be more detailed and lengthy than the human reference. The reasonings must be written in first person, thinking as if you are the robot. 
-                    
-                    Note that the goal of this task is: {task.name}."""
+                    The text file is the reference annotation of written by a human. Use this reference annotation to guide your style and formatting. The actions and reasonings should be more detailed and lengthy than the human reference. The reasonings must be written in first person, thinking as if you are the robot. 
+                 """
 
                             
                     reference_annotation = client.files.upload(file = annotation_path)

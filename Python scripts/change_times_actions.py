@@ -3,7 +3,7 @@ from pathlib import Path
 import sys
 
 # ←– EDIT THIS to the path of the folder containing your .txt annotation files:
-ANNOTATIONS_FOLDER = Path("C:/Users/wuad3/Downloads/30FPS_ANNOTATIONS")
+ANNOTATIONS_FOLDER = Path("C:/Users/wuad3/Downloads/libero-10-annotations-txt")
 
 # 30 fps → 20 fps scaling factor
 FACTOR = 1.5
@@ -30,16 +30,11 @@ def convert_line(line: str, factor: float = FACTOR) -> str:
     new_start = orig_start * factor
     new_end   = orig_end   * factor
 
-    new_dur = new_end - new_start
-
-    # overwrite the four time fields
+    # overwrite only the four time fields
     parts[2] = sec_to_hms(new_start)
     parts[3] = f"{new_start:.3f}"
     parts[4] = sec_to_hms(new_end)
     parts[5] = f"{new_end:.3f}"
-    # overwrite the two duration fields
-    parts[6] = sec_to_hms(new_dur)
-    parts[7] = f"{new_dur:.3f}"
 
     return "\t".join(parts) + "\n"
 
