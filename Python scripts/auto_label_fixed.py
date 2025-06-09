@@ -13,7 +13,7 @@ from fpdf import FPDF
  
 client = genai.Client(api_key="AIzaSyA3JNDI0RArQ2V7X_eF_P6Y3DX8gP5hGDQ")
 FRAME_GAP = 10
-VIDEOS_PATH = "C:/Users/wuad3/Downloads/Test_1"
+VIDEOS_PATH = "C:/Users/wuad3/Documents/CMU/Freshman Year/Research/SAMPLE"
 PHOTO_X = 10
 PHOTO_Y = 10
 PHOTO_W = 190
@@ -21,7 +21,7 @@ PHOTO_W = 190
 
 # File tree 
 # folder
-#    folder
+#    name of task (folder)
 #      videos
 
 
@@ -54,7 +54,12 @@ with os.scandir(VIDEOS_PATH) as tasks:
                             frame_filename = f"{demo_name}frame_{frame_count:04d}.jpg"
                             cv2.imwrite(frame_filename, frame)
                             pdf.add_page()
-                            pdf.image(frame_filename, x=PHOTO_X, y=PHOTO_Y, w=PHOTO_W)
+                            # Add time in seconds to the top-left corner before the image
+                            time_seconds = frame_count / 20
+                            pdf.set_xy(PHOTO_X, PHOTO_Y - 5)  # Slightly above the image
+                            pdf.set_font("Arial", size=10)
+                            pdf.cell(0, 10, f"Time: {time_seconds:.2f}s", ln=1)
+                            pdf.image(frame_filename, x=PHOTO_X, y=PHOTO_Y + 15, w=PHOTO_W)
                             os.remove(frame_filename)
                             # print(f"Frame {frame_count} saved as {frame_filename}")
                         frame_count += 1
@@ -73,16 +78,21 @@ with os.scandir(VIDEOS_PATH) as tasks:
                     # get the length of the video to help gemini
                     length = frame_count / 20
                     
-                    prompt = f"""Can you segment the video provided in the pdf into detailed actions and detailed reasonings the robot is performing? The the goal of the robot's task is: {task.name}.  You should record the action the robot is performing, a reasoning for the action, a start time of the action, end time of the action, and duration of the action.
+                    prompt = f"""
+                    First, examine the first page of the pdf provided. Describe the scene in front of you internally without outputting a response. When observing, pay careful attention to the the task name, {task.name}. Then, 
                     
-                    The first pdf named {demo_name}_frames.pdf shows frames of the state of the robot throughout a task being done. The left side shows the front view and the right side shows the view on the grippers of the robot. Each frame is spaced 0.05 seconds apart. This video has a length of {length} seconds.
-                                       
-                    The text file is the reference annotation of written by a human. Use this reference annotation to guide your style and formatting. The actions and reasonings should be more detailed and lengthy than the human reference. The reasonings must be written in first person, thinking as if you are the robot. 
+                    segment the video provided in the pdf into detailed actions and detailed reasonings the robot is performing. Remember, the goal of the robot's task is: {task.name}.  You should record the observation of the scene (as the first field), the action the robot is performing, a reasoning for the action, a start time of the action, end time of the action, and duration of the action. The reasonings must be written in first person, thinking as if you are the robot.
+                    
+                    The first pdf named {demo_name}_frames.pdf shows all the frames of the state of the robot throughout a task being done. The left side shows the front view and the right side shows the view on the grippers of the robot. Each frame is spaced 0.05 seconds apart. This video has a length of {length} seconds.
+                    
+                    The action annotation is relatively fine-grained. For example, grasping is divided into 2 actions: reach, close the gripper. If the task description highlights spatial relationships, or if there are multiple objects from the same category, then your annotation should also contain these spatial / directional info, such as left / right, front / back. For the reasoning part, you only need to provide key steps. Focus on key visual features that help you identify the current situation. For example, the robot "is holding sth." or "has not reached sth." Remember that Gemini's visual understanding is worse than reasoning ability, so help Gemini more with visual info.
+                                        
                  """
-
+                    print(prompt)
                     # 3. save
   
                     class Annotation(BaseModel):
+                        observation: str  # New field for an observation of the scene (now first)
                         action: str
                         reasoning: str
                         start: float
@@ -113,6 +123,7 @@ with os.scandir(VIDEOS_PATH) as tasks:
                             end_time = round(float(item['end']), 3)
                             duration_time = round(end_time - start_time, 3)
                             formatted_data.append(Annotation(
+                                observation=item['observation'],
                                 action=item['action'],
                                 reasoning=item['reasoning'],
                                 start=start_time,

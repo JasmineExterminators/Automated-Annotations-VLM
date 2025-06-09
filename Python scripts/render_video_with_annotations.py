@@ -32,40 +32,24 @@ def overlay_text(
     OUTPUT_FRAME_WIDTH,
     OUTPUT_FRAME_HEIGHT,
     font=cv2.FONT_HERSHEY_PLAIN,
-    font_scale=0.5,
-    font_color=(0, 255, 255),  # BGR format: (Blue, Green, Red) - Yellow
-    thickness=1,
+    font_scale=1.0,  # Slightly larger for higher-res, but still small
+    font_color=(0, 0, 0),
+    thickness=2,
 ):
     """
     Overlays specified text onto an MP4 video using only OpenCV.
-
-    Args:
-        input_video_path (str): Path to the input MP4 video file.
-        output_video_path (str): Path to save the new MP4 video file with text.
-        text_to_overlay (str): The text string to overlay.
-        start_time_sec (float): Time in seconds when the text should appear.
-        end_time_sec (float): Time in seconds when the text should disappear.
-        font (int): OpenCV font type (e.g., cv2.FONT_HERSHEY_SIMPLEX).
-        font_scale (float): Scale factor of the font.
-        font_color (tuple): BGR color tuple (e.g., (255, 255, 255) for white).
-        thickness (int): Thickness of the text lines.
+    Now overlays directly on the video, with a translucent white background for the annotation.
     """
     while True:
         ret, frame = cap.read()
-        if not ret: # hopefully not error and signifies end of vid
+        if not ret:
             break
 
         current_time_sec = frame_count / fps
 
-        canvas = np.zeros((OUTPUT_FRAME_HEIGHT, OUTPUT_FRAME_WIDTH, 3), dtype=np.uint8)
-        # verifying that the og frame is 128 by 128 (if not, resize)
-        small_frame = cv2.resize(frame, (256, 128))
-
-        # Place the small frame in the bottom right corner
-        y_offset = OUTPUT_FRAME_HEIGHT - 128
-        x_offset = OUTPUT_FRAME_WIDTH - 256
-        canvas[y_offset:y_offset+128, x_offset:x_offset+256] = small_frame
-
+        # Resize frame to output size (3x for higher resolution)
+        if (frame.shape[1], frame.shape[0]) != (OUTPUT_FRAME_WIDTH, OUTPUT_FRAME_HEIGHT):
+            frame = cv2.resize(frame, (OUTPUT_FRAME_WIDTH, OUTPUT_FRAME_HEIGHT), interpolation=cv2.INTER_CUBIC)
 
         annot = annotations[0]
         action_words = annot["action"]
@@ -76,94 +60,143 @@ def overlay_text(
 
         text_to_overlay = f"ACTION: {action_words}  REASONING: {reasoning_words}"
 
-        # Calculate text size to help with positioning
+        # Calculate max text width (full width minus padding)
+        max_text_width = OUTPUT_FRAME_WIDTH - 60  # 30px padding on each side
+        lines = wrap_text(text_to_overlay, font, font_scale, thickness, max_text_width)
         (text_width, text_height), baseline = cv2.getTextSize(
             text_to_overlay, font, font_scale, thickness
         )
+        line_height = text_height + baseline + 12
+        total_text_height = line_height * len(lines)
+        x, y = 30, 60  # 30px from left, 60px from top
 
-        # Position text top left
-        x, y = 10, text_height + 10 # 10 pixels from left, 10 pixels below text height
-        max_text_width = width - 20 # 10px padding on each side
+        # Only use the top half of the screen for annotation
+        max_annotation_height = OUTPUT_FRAME_HEIGHT // 2 - 40  # 40px padding from half
+        if total_text_height > max_annotation_height:
+            # If text is too tall, reduce font_scale (minimum 0.5)
+            while total_text_height > max_annotation_height and font_scale > 0.5:
+                font_scale -= 0.1
+                lines = wrap_text(text_to_overlay, font, font_scale, thickness, max_text_width)
+                (text_width, text_height), baseline = cv2.getTextSize(
+                    text_to_overlay, font, font_scale, thickness
+                )
+                line_height = text_height + baseline + 12
+                total_text_height = line_height * len(lines)
 
         if current_time_sec <= annot_end_time:
-            lines = wrap_text(text_to_overlay, font, font_scale, thickness, max_text_width)
+            # Draw translucent white rectangle as background for annotation (top half only)
+            overlay = frame.copy()
+            rect_top_left = (20, y - text_height - 20)
+            rect_bottom_right = (OUTPUT_FRAME_WIDTH - 20, y + total_text_height + 20)
+            if rect_bottom_right[1] > OUTPUT_FRAME_HEIGHT // 2:
+                rect_bottom_right = (rect_bottom_right[0], OUTPUT_FRAME_HEIGHT // 2)
+            cv2.rectangle(
+                overlay,
+                rect_top_left,
+                rect_bottom_right,
+                (255, 255, 255),
+                thickness=-1
+            )
+            alpha = 0.7  # Transparency factor
+            frame = cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0)
+
+            # Draw each line of text
             for i, line in enumerate(lines):
-                y_line = y + i*(text_height + baseline + 5)
-                # Draw one line of main text
+                y_line = y + i * line_height
+                if y_line > OUTPUT_FRAME_HEIGHT // 2 - 10:
+                    break  # Don't draw past the top half
                 cv2.putText(
-                    canvas, # Frame is already BGR from cap.read()
+                    frame,
                     line,
                     (x, y_line),
                     font,
                     font_scale,
                     font_color,
                     thickness,
-                    cv2.LINE_AA # Anti-aliasing for smoother text
+                    cv2.LINE_AA
                 )
-
-            out.write(canvas) # Write the modified frame to the output video
-
+            out.write(frame)
             frame_count += 1
         else:
             if len(annotations) != 1:
                 annotations.pop(0)
 
 if __name__ == "__main__":
-    G_ANNOTATIONS_PATH = "C:/Users/cajas/Downloads/demo_0.json"
-    OG_VIDEO_PATH = "C:/Users/cajas/Downloads/demo_0(17).mp4"
-    ANNOTED_VIDEO_PATH = "C:/Users/cajas/Downloads/demo_0(18).mp4"
+    # Path to the folder containing all subfolders to be traversed
+    LIBERO_90_PATH = "C:/Users/wuad3/Documents/CMU/Freshman Year/Research/SAMPLE"
 
-    OUTPUT_FRAME_WIDTH = 512
-    OUTPUT_FRAME_HEIGHT = 512
-    
-    # Open vid file
-    print(f"Starting video annotation overlay for '{OG_VIDEO_PATH}'...")
-    cap = cv2.VideoCapture(OG_VIDEO_PATH)
-    if not cap.isOpened():
-        print(f"Error: Could not open video file '{OG_VIDEO_PATH}'. Check path or file integrity.")
-    
-    # Get vid properties
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    duration_sec = total_frames / fps
-    print(f"Input video properties: {width}x{height} @ {fps} FPS, {total_frames} frames ({duration_sec:.2f} seconds).")
+    # Iterate through each folder (task folder)
+    for root, dirs, files in os.walk(LIBERO_90_PATH):
+        # Group files by their base name (without extension)
+        file_groups = {}
+        for file in files:
+            name, ext = os.path.splitext(file)
+            if name not in file_groups:
+                file_groups[name] = []
+            file_groups[name].append(file)
 
-    # Set up the video writer (set up out vid)
-    # Define the codec and create VideoWriter object
-    # For .mp4, common codecs are 'mp4v' or 'XVID' (if available).
-    # 'mp4v' is generally more compatible for MP4.
-    # On some systems, 'avc1' (H.264) might work if ffmpeg is properly linked.
-    # If this fails, try 'XVID'.
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v') # Codec for MP4
-    out = cv2.VideoWriter(ANNOTED_VIDEO_PATH, fourcc, fps, (OUTPUT_FRAME_WIDTH, OUTPUT_FRAME_HEIGHT))
-    if not out.isOpened():
-        print(f"Error: Could not open video writer for '{ANNOTED_VIDEO_PATH}'. Check codec or permissions.")
-        cap.release()
+        # For each group, check if there is a matching video and JSON annotation
+        for name, group_files in file_groups.items():
+            video_file = None
+            json_file = None
+            for file in group_files:
+                if file.endswith('.mp4'):
+                    video_file = file
+                elif file.endswith('.json'):
+                    json_file = file
 
-    frame_count = 0
+            if video_file and json_file:
+                # Construct full paths
+                video_path = os.path.join(root, video_file)
+                json_path = os.path.join(root, json_file)
+                output_path = os.path.join(root, f"{name}_annotated.mp4")
 
-    with open(G_ANNOTATIONS_PATH, "r", encoding="utf-8") as f:
-        annotations = json.load(f)
+                # Open video file
+                print(f"Starting video annotation overlay for '{video_path}'...")
+                cap = cv2.VideoCapture(video_path)
+                if not cap.isOpened():
+                    print(f"Error: Could not open video file '{video_path}'. Check path or file integrity.")
+                    continue
 
-        
+                # Get video properties
+                fps = cap.get(cv2.CAP_PROP_FPS)
+                width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+                duration_sec = total_frames / fps
+                print(f"Input video properties: {width}x{height} @ {fps} FPS, {total_frames} frames ({duration_sec:.2f} seconds).")
 
-    overlay_text(
-        frame_count,
-        cap,
-        out,
-        fps, 
-        width,
-        height,
-        total_frames,
-        annotations,
-        OUTPUT_FRAME_WIDTH,
-        OUTPUT_FRAME_HEIGHT)
+                OUTPUT_FRAME_WIDTH = width * 3  # 3x input video width
+                OUTPUT_FRAME_HEIGHT = height * 3  # 3x input video height
 
+                # Set up the video writer
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Codec for MP4
+                out = cv2.VideoWriter(output_path, fourcc, fps, (OUTPUT_FRAME_WIDTH, OUTPUT_FRAME_HEIGHT))
+                if not out.isOpened():
+                    print(f"Error: Could not open video writer for '{output_path}'. Check codec or permissions.")
+                    cap.release()
+                    continue
 
-    # Release everything when done
-    cap.release()
-    out.release()
+                frame_count = 0
 
-    print(f"Video processing complete for '{ANNOTED_VIDEO_PATH}'.")
+                with open(json_path, "r", encoding="utf-8") as f:
+                    annotations = json.load(f)
+
+                overlay_text(
+                    frame_count,
+                    cap,
+                    out,
+                    fps, 
+                    width,
+                    height,
+                    total_frames,
+                    annotations,
+                    OUTPUT_FRAME_WIDTH,
+                    OUTPUT_FRAME_HEIGHT
+                )
+
+                # Release everything when done
+                cap.release()
+                out.release()
+
+                print(f"Video processing complete for '{output_path}'.")
