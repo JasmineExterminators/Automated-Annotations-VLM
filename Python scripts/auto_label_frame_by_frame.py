@@ -15,7 +15,6 @@ FRAME_GAP = 10
 VIDEOS_PATH = "C:/Users/wuad3/Documents/CMU/Freshman Year/Research/SAMPLE"
 MODEL = "gemini-2.0-flash"
 FPS = 20
-END_IMG_PATH = "C:/Users/wuad3/Documents/CMU/Freshman Year/Research/Automated-Annotations-VLM/data/black_end.jpg"
 
 
 PHOTO_X = 10
@@ -25,9 +24,6 @@ class Annotation(BaseModel):
     observation: str
     action: str
     reasoning: str
-    start: float
-    end: float
-    duration: float
 
 def wrap_text(text, font, font_scale, thickness, max_width):
     """Splits text into lines so each line fits within max_width pixels."""
@@ -57,6 +53,7 @@ def overlay_text(
     annotations,
     OUTPUT_FRAME_WIDTH,
     OUTPUT_FRAME_HEIGHT,
+    time_gap,
     font=cv2.FONT_HERSHEY_PLAIN,
     font_scale=1.0,
     font_color=(0, 0, 0),
@@ -66,52 +63,49 @@ def overlay_text(
     Overlays specified text onto an MP4 video using only OpenCV.
     Now overlays directly on the video, with a translucent white background for the annotation.
     """
+    frame_count = 0
     while True:
         ret, frame = cap.read()
         if not ret:
             break
 
-        current_time_sec = frame_count / fps
-
-        # Resize frame to output size (3x for higher resolution)
+        # Resize frame to output size
         if (frame.shape[1], frame.shape[0]) != (OUTPUT_FRAME_WIDTH, OUTPUT_FRAME_HEIGHT):
             frame = cv2.resize(frame, (OUTPUT_FRAME_WIDTH, OUTPUT_FRAME_HEIGHT), interpolation=cv2.INTER_CUBIC)
-        if annotations is None or len(annotations) == 0:
-            annot = ""
-        else:
-            annot = annotations[0]
-        action_words = annot["action"]
-        reasoning_words = annot["reasoning"]
-        annot_start_time = annot["start"]
-        annot_end_time = annot["end"]
-        annot_duration_time = annot["duration"]
 
-        text_to_overlay = f"ACTION: {action_words}  REASONING: {reasoning_words}"
+        # Calculate which annotation to show based on current time
+        current_time = frame_count / fps
+        annotation_index = int(current_time / time_gap)
+        
+        if annotation_index < len(annotations):
+            annot = annotations[annotation_index]
+            action_words = annot["action"]
+            reasoning_words = annot["reasoning"]
+            text_to_overlay = f"ACTION: {action_words}  REASONING: {reasoning_words}"
 
-        # Calculate max text width (full width minus padding)
-        max_text_width = OUTPUT_FRAME_WIDTH - 60  # 30px padding on each side
-        lines = wrap_text(text_to_overlay, font, font_scale, thickness, max_text_width)
-        (text_width, text_height), baseline = cv2.getTextSize(
-            text_to_overlay, font, font_scale, thickness
-        )
-        line_height = text_height + baseline + 12
-        total_text_height = line_height * len(lines)
-        x, y = 30, 60  # 30px from left, 60px from top
+            # Calculate max text width (full width minus padding)
+            max_text_width = OUTPUT_FRAME_WIDTH - 60  # 30px padding on each side
+            lines = wrap_text(text_to_overlay, font, font_scale, thickness, max_text_width)
+            (text_width, text_height), baseline = cv2.getTextSize(
+                text_to_overlay, font, font_scale, thickness
+            )
+            line_height = text_height + baseline + 12
+            total_text_height = line_height * len(lines)
+            x, y = 30, 60  # 30px from left, 60px from top
 
-        # Only use the top half of the screen for annotation
-        max_annotation_height = OUTPUT_FRAME_HEIGHT // 2 - 40  # 40px padding from half
-        if total_text_height > max_annotation_height:
-            # If text is too tall, reduce font_scale (minimum 0.5)
-            while total_text_height > max_annotation_height and font_scale > 0.5:
-                font_scale -= 0.1
-                lines = wrap_text(text_to_overlay, font, font_scale, thickness, max_text_width)
-                (text_width, text_height), baseline = cv2.getTextSize(
-                    text_to_overlay, font, font_scale, thickness
-                )
-                line_height = text_height + baseline + 12
-                total_text_height = line_height * len(lines)
+            # Only use the top half of the screen for annotation
+            max_annotation_height = OUTPUT_FRAME_HEIGHT // 2 - 40  # 40px padding from half
+            if total_text_height > max_annotation_height:
+                # If text is too tall, reduce font_scale (minimum 0.5)
+                while total_text_height > max_annotation_height and font_scale > 0.5:
+                    font_scale -= 0.1
+                    lines = wrap_text(text_to_overlay, font, font_scale, thickness, max_text_width)
+                    (text_width, text_height), baseline = cv2.getTextSize(
+                        text_to_overlay, font, font_scale, thickness
+                    )
+                    line_height = text_height + baseline + 12
+                    total_text_height = line_height * len(lines)
 
-        if current_time_sec <= annot_end_time:
             # Draw translucent white rectangle as background for annotation (top half only)
             overlay = frame.copy()
             rect_top_left = (20, y - text_height - 20)
@@ -143,11 +137,9 @@ def overlay_text(
                     thickness,
                     cv2.LINE_AA
                 )
-            out.write(frame)
-            frame_count += 1
-        else:
-            if len(annotations) != 1:
-                annotations.pop(0)
+
+        out.write(frame)
+        frame_count += 1
 
 def main():
     with os.scandir(VIDEOS_PATH) as tasks:
@@ -183,7 +175,7 @@ def main():
                                 PROMPT = f"""You are a robot performing the task {task.name}. You are given three files. 
                                 1. The previous frame from {time_gap} seconds ago. 
                                 2. The current view of the scene. 
-                                3. "context" is a JSON containing the previous history of the scene and robot. 
+                                3. The previous context: {json.dumps(context, indent=2)}.
                                 
                             The left side shows the front view and the right side shows the view on the grippers of the robot. 
 
@@ -203,32 +195,22 @@ def main():
 
                         """
                                 # print(PROMPT)
-                                context_filename = f"{demo_name}_context_{frame_count:04d}.json"
-                                json_output_path = Path(VIDEOS_PATH) / task.name / context_filename
                                 prev_frame_filename = f"{demo_name}_frame_prev_{frame_count:04d}.jpg"
                                 next_frame_filename = f"{demo_name}_frame_next_{frame_count:04d}.jpg"
                                 cv2.imwrite(prev_frame_filename, prev_frame)
                                 cv2.imwrite(next_frame_filename, next_frame)
                                 
-                                # Save context to temporary file
-                                with open(json_output_path, "w", encoding="utf-8") as f:
-                                    json.dump(context, f, indent=4, ensure_ascii=False)
-                                
+                                # Save frames to temporary file                                
                                 prev_frame_uploaded = client.files.upload(file = prev_frame_filename)
                                 next_frame_uploaded = client.files.upload(file = next_frame_filename)
-                                context_uploaded = client.files.upload(file = str(json_output_path))
                                 
                                 try:
 
                                     print(f"Making API call for frame {frame_count}...")
-
+                                    print(json.dumps(context))
                                     response = client.models.generate_content(
                                         model=MODEL, 
-                                        contents=[
-                                            prev_frame_uploaded, 
-                                            next_frame_uploaded, 
-                                            PROMPT
-                                        ],
+                                        contents=[prev_frame_uploaded, next_frame_uploaded, PROMPT],
                                         config={
                                             "response_mime_type": "application/json",
                                             "response_schema": list[Annotation]
@@ -243,8 +225,8 @@ def main():
                                         try:
                                             new_context = json.loads(response.text)
                                             if isinstance(new_context, list):
-                                                context = new_context
-                                                print(f"Successfully updated context with {len(new_context)} annotations")
+                                                context.append(new_context)
+                                                print(f"Now there are {len(context)} annotations")
                                             else:
                                                 print(f"Warning: Unexpected response format: {response.text}")
                                         except json.JSONDecodeError as e:
@@ -264,7 +246,6 @@ def main():
                                 try:
                                     os.remove(next_frame_filename)
                                     os.remove(prev_frame_filename)
-                                    os.remove(str(json_output_path))
                                 except Exception as e:
                                     print(f"Warning: Error cleaning up temporary files: {e}")
                                 time_in_sec += time_gap
@@ -278,18 +259,12 @@ def main():
                         try:
                             formatted_data = []
                             for item in context:
-                                start_time = round(float(item['start']), 3)
-                                end_time = round(float(item['end']), 3)
-                                duration_time = round(end_time - start_time, 3)
                                 formatted_data.append(Annotation(
-                                    observation=item['observation'],
-                                    action=item['action'],
-                                    reasoning=item['reasoning'],
-                                    start=start_time,
-                                    end=end_time,
-                                    duration=duration_time
+                                    observation=item[0]['observation'],
+                                    action=item[0]['action'],
+                                    reasoning=item[0]['reasoning']
                                 ).model_dump())
-                             
+                            
                             with open(output_path, "w", encoding="utf-8") as f:
                                 json.dump(formatted_data, f, indent=4, ensure_ascii=False)
                             print(f"Successfully saved JSON to {output_path}")
@@ -337,7 +312,8 @@ def main():
                             total_frames,
                             annotations,
                             OUTPUT_FRAME_WIDTH,
-                            OUTPUT_FRAME_HEIGHT
+                            OUTPUT_FRAME_HEIGHT,
+                            time_gap
                         )
 
                         cap.release()
