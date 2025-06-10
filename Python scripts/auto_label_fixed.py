@@ -86,6 +86,8 @@ with os.scandir(VIDEOS_PATH) as tasks:
                     The first pdf named {demo_name}_frames.pdf shows all the frames of the state of the robot throughout a task being done. The left side shows the front view and the right side shows the view on the grippers of the robot. Each frame is spaced 0.05 seconds apart. This video has a length of {length} seconds.
                     
                     The action annotation is relatively fine-grained. For example, grasping is divided into 2 actions: reach, close the gripper. If the task description highlights spatial relationships, or if there are multiple objects from the same category, then your annotation should also contain these spatial / directional info, such as left / right, front / back. For the reasoning part, you only need to provide key steps. Focus on key visual features that help you identify the current situation. For example, the robot "is holding sth." or "has not reached sth." Remember that Gemini's visual understanding is worse than reasoning ability, so help Gemini more with visual info.
+                    
+                    In the reasoning, include more detailed information about the perception of the scene, such as the state of the robot's grippers, the position of objects, and any other relevant details that would help in understanding the actions being performed.
                                         
                  """
                     print(prompt)

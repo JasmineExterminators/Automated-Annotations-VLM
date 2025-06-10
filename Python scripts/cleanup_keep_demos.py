@@ -1,10 +1,10 @@
 import os
 
 # Path to the folder containing all subfolders to be traversed
-LIBERO_90_PATH = "C:/Users/wuad3/Documents/CMU/Freshman Year/Research/LIBERO-90-COLORED"  # <-- Set this to your actual path
+LIBERO_90_PATH = "C:/Users/wuad3/Documents/CMU/Freshman Year/Research/SAMPLE"  # <-- Set this to your actual path
 
 # Names to keep (without extension)
-KEEP_NAMES = {"demo_0", "demo_1", "demo_2"}
+KEEP_NAMES = {"demo_0"}
 
 for root, dirs, files in os.walk(LIBERO_90_PATH):
     for file in files:
