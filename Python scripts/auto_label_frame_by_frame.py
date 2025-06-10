@@ -1,3 +1,10 @@
+# - beginning frame as reference or TIME_GAP past FRAME_GAP
+# - recycling past action and reasoning
+# - 
+
+
+
+
 import os
 import json
 import cv2
@@ -193,7 +200,7 @@ def main():
                                                 
                         2. Think about your observations and the past context. Decide if the current frames represent a critical part of the robot task. Not every interval is critical!
                         
-                        If you decide this interval is critical, generate an action that the robot is taking in the current frame as well as a detailed reasoning for the action. The action annotation is fine-grained. For example, grasping is divided into 2 actions: reach, close the gripper. If the task description highlights spatial relationships, or if there are multiple objects from the same category, then your action and reasoning should also contain these spatial / directional info, such as left / right, front / back. Focus on key visual features that help you identify the current situation. For example, the robot "is holding something." or "has not reached something." 
+                        If you decide this interval is critical, generate an action that the robot should take in the current frame as well as a detailed reasoning for the action. The action annotation is fine-grained. For example, grasping is divided into 2 actions: reach, close the gripper. If the task description highlights spatial relationships, or if there are multiple objects from the same category, then your action and reasoning should also contain these spatial / directional info, such as left / right, front / back. Focus on key visual features that help you identify the current situation. For example, the robot "is holding something." or "has not reached something." 
                         
                         REMEMBER: the task name is {task.name}. There should be roughly {round(duration_sec)} annotations in total, so do not annotate every {time_gap} seconds. Only annotate when there is a critical change in the scene or robot action.
                         
@@ -219,29 +226,22 @@ def main():
                                 with open(json_output_path, "w", encoding="utf-8") as f:
                                     json.dump(context, f, indent=4, ensure_ascii=False)
                                 
-                                client.files.upload(file = prev_frame_filename)
-                                client.files.upload(file = next_frame_filename)
-                                client.files.upload(file = str(json_output_path))
+                                prev_frame_uploaded = client.files.upload(file = prev_frame_filename)
+                                next_frame_uploaded = client.files.upload(file = next_frame_filename)
+                                context_uploaded = client.files.upload(file = str(json_output_path))
                                 
                                 try:
-                                    # Convert images to base64
-                                    _, prev_frame_encoded = cv2.imencode('.jpg', prev_frame)
-                                    _, next_frame_encoded = cv2.imencode('.jpg', next_frame)
-                                    prev_frame_base64 = base64.b64encode(prev_frame_encoded).decode('utf-8')
-                                    next_frame_base64 = base64.b64encode(next_frame_encoded).decode('utf-8')
 
                                     print(f"Making API call for frame {frame_count}...")
-                                    # Create the content parts
-                                    content_parts = [
-                                        {"text": PROMPT},
-                                        {"inline_data": {"mime_type": "image/jpeg", "data": prev_frame_base64}},
-                                        {"inline_data": {"mime_type": "image/jpeg", "data": next_frame_base64}},
-                                        {"text": json.dumps(context)}
-                                    ]
 
                                     response = client.models.generate_content(
                                         model=MODEL, 
-                                        contents=content_parts,
+                                        contents=[
+                                            prev_frame_uploaded, 
+                                            next_frame_uploaded, 
+                                             
+                                            PROMPT
+                                        ],
                                         config={
                                             "response_mime_type": "application/json",
                                             "response_schema": list[Annotation]
