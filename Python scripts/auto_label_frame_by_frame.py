@@ -159,6 +159,7 @@ def main():
                         
                         # initialize stuff
                         prev_frame = frame.copy() if ret else None
+                        first_frame = frame.copy() if ret else None
                         context = []  # Initialize as empty list instead of [{}]
                         time_gap = (1 / FPS) * FRAME_GAP # time between frames in seconds
                         time_in_sec = 0
@@ -197,12 +198,15 @@ def main():
                                 # print(PROMPT)
                                 prev_frame_filename = f"{demo_name}_frame_prev_{frame_count:04d}.jpg"
                                 next_frame_filename = f"{demo_name}_frame_next_{frame_count:04d}.jpg"
+                                first_frame_filename = f"{demo_name}_frame_first.jpg"
                                 cv2.imwrite(prev_frame_filename, prev_frame)
                                 cv2.imwrite(next_frame_filename, next_frame)
+                                cv2.imwrite(first_frame_filename, first_frame)
                                 
                                 # Save frames to temporary file                                
                                 prev_frame_uploaded = client.files.upload(file = prev_frame_filename)
                                 next_frame_uploaded = client.files.upload(file = next_frame_filename)
+                                first_frame_uploaded = client.files.upload(file = first_frame_filename)
                                 
                                 try:
 
@@ -210,7 +214,7 @@ def main():
                                     print(json.dumps(context))
                                     response = client.models.generate_content(
                                         model=MODEL, 
-                                        contents=[prev_frame_uploaded, next_frame_uploaded, PROMPT],
+                                        contents=[first_frame_uploaded, prev_frame_uploaded, next_frame_uploaded, PROMPT],
                                         config={
                                             "response_mime_type": "application/json",
                                             "response_schema": list[Annotation]
