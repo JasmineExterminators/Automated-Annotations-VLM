@@ -173,10 +173,11 @@ def main():
                             if frame_count % FRAME_GAP == 0:
                                 print(f"Processing frame {frame_count}...")
                                 
-                                PROMPT = f"""You are a robot performing the task {task.name}. You are given three files. 
-                                1. The previous frame from {time_gap} seconds ago. 
-                                2. The current view of the scene. 
-                                3. The previous context: {json.dumps(context, indent=2)}.
+                                PROMPT = f"""You are a robot performing the task {task.name}. You are given four files. 
+                                1. The first frame of the video, which depicts the initial state of the scene.
+                                2. The previous frame from {time_gap} seconds ago. 
+                                3. The current view of the scene. 
+                                4. The previous context: {json.dumps(context, indent=2)}.
                                 
                             The left side shows the front view and the right side shows the view on the grippers of the robot. 
 
@@ -192,7 +193,7 @@ def main():
                         
                         An example action is "reach for the black bowl by the white plate." An example reasoning is "I am reaching for the black bowl by the white plate because I need to pick it up and place it in the caddy. The bowl is on the left side of the plate, and I need to ensure I grasp it securely."
                         
-                        IMPORTANT: It is imperative that you do not hallucinate actions or reasonings. For instance, closely examine the eye-in-hand view of the robot. If the robot is not grasping an object, do not annotate it as such. 
+                        IMPORTANT: It is imperative that you do not hallucinate actions or reasonings. For instance, closely examine the eye-in-hand view of the robot. If the robot is not grasping an object, do not annotate it as such. It is okay for intervals to be annotated similarly or to annotate intermediate actions like "continue holding" or "maintain position" if the robot is not performing a distinct action.
 
                         """
                                 # print(PROMPT)
@@ -211,7 +212,7 @@ def main():
                                 try:
 
                                     print(f"Making API call for frame {frame_count}...")
-                                    print(json.dumps(context))
+                                    # print(json.dumps(context))
                                     response = client.models.generate_content(
                                         model=MODEL, 
                                         contents=[first_frame_uploaded, prev_frame_uploaded, next_frame_uploaded, PROMPT],
@@ -235,7 +236,7 @@ def main():
                                                 print(f"Warning: Unexpected response format: {response.text}")
                                         except json.JSONDecodeError as e:
                                             print(f"Error parsing Gemini response: {e}")
-                                            print(f"Raw response: {response.text}")
+                                            # print(f"Raw response: {response.text}")
                                     else:
                                         print("Warning: Empty response from Gemini")
                                         
@@ -275,7 +276,7 @@ def main():
 
                         except Exception as e:
                             print(f"Error saving final annotations: {e}")
-                            print(f"Context data: {context}")
+                            # print(f"Context data: {context}")
 
                         # 3. Render the video with annotations
                         cap = cv2.VideoCapture(demo_path)

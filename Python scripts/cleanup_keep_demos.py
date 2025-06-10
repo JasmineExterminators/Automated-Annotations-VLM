@@ -1,18 +1,25 @@
-import os
+from pathlib import Path
 
 # Path to the folder containing all subfolders to be traversed
-LIBERO_90_PATH = "C:/Users/wuad3/Documents/CMU/Freshman Year/Research/SAMPLE"  # <-- Set this to your actual path
+LIBERO_90_PATH = Path(r"C:/Users/wuad3/Documents/CMU/Freshman Year/Research/SAMPLE")
 
-# Names to keep (without extension)
-KEEP_NAMES = {"demo_0"}
+# Exact filenames to keep
+KEEP_FILES = {"demo_0.mp4"}
 
-for root, dirs, files in os.walk(LIBERO_90_PATH):
-    for file in files:
-        name, ext = os.path.splitext(file)
-        if name not in KEEP_NAMES:
-            file_path = os.path.join(root, file)
-            try:
-                os.remove(file_path)
-                print(f"Deleted: {file_path}")
-            except Exception as e:
-                print(f"Failed to delete {file_path}: {e}") 
+# Delete all files not in KEEP_FILES
+for file_path in LIBERO_90_PATH.rglob("*"):
+    if file_path.is_file() and file_path.name not in KEEP_FILES:
+        try:
+            file_path.unlink()
+            print(f"Deleted file: {file_path}")
+        except Exception as e:
+            print(f"Failed to delete {file_path}: {e}")
+
+# Optional: delete empty directories
+for dir_path in sorted(LIBERO_90_PATH.rglob("*"), key=lambda p: -p.as_posix().count("/")):
+    if dir_path.is_dir() and not any(dir_path.iterdir()):
+        try:
+            dir_path.rmdir()
+            print(f"Removed empty directory: {dir_path}")
+        except Exception as e:
+            print(f"Failed to remove directory {dir_path}: {e}")
