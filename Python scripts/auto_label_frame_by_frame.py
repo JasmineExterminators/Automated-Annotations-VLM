@@ -1,10 +1,3 @@
-# - beginning frame as reference or TIME_GAP past FRAME_GAP
-# - recycling past action and reasoning
-# - 
-
-
-
-
 import os
 import json
 import cv2
@@ -234,7 +227,6 @@ def main():
                                         contents=[
                                             prev_frame_uploaded, 
                                             next_frame_uploaded, 
-                                            JSON.stringfy(context),
                                             PROMPT
                                         ],
                                         config={
