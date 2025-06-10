@@ -192,27 +192,22 @@ def main():
                                 2. The current view of the scene. 
                                 3. "context" is a JSON containing the previous history of the scene and robot. 
                                 
-                                There are {duration_sec - time_in_sec} seconds remaining in the video. The current time in the video is {time_in_sec} seconds.  The left side shows the front view and the right side shows the view on the grippers of the robot. 
+                            The left side shows the front view and the right side shows the view on the grippers of the robot. 
+
+                        MISSION: Your mission is to generate a detailed action and reasoning for the robot to take in the current frame.
 
                         DO NOT begin generating anything until instructed to do so.
                         
-                        1. Examine the previous and current frame. Describe the scene before you in an observation. When observing, pay careful attention to the task name, {task.name}. Note object spatial relationships and the robot position. 
+                        1. Examine the previous and current frame. Infer what happened between the two frames and what is happening right now. When observing, pay careful attention to the task name, {task.name}. Note object spatial relationships and the robot position. 
                                                 
-                        2. Think about your observations and the past context. Decide if the current frames represent a critical part of the robot task. Not every interval is critical!
+                        2. Think about your observations and the past context. Generate an action that the robot should take in the current frame as well as a detailed reasoning for the action. The action annotation is fine-grained. For example, grasping is divided into 2 actions: reach, close the gripper. If the task description highlights spatial relationships, or if there are multiple objects from the same category, then your action and reasoning should also contain these spatial / directional info, such as left / right, front / back. Focus on key visual features that help you identify the current situation. For example, the robot "is holding something." or "has not reached something." 
                         
-                        If you decide this interval is critical, generate an action that the robot should take in the current frame as well as a detailed reasoning for the action. The action annotation is fine-grained. For example, grasping is divided into 2 actions: reach, close the gripper. If the task description highlights spatial relationships, or if there are multiple objects from the same category, then your action and reasoning should also contain these spatial / directional info, such as left / right, front / back. Focus on key visual features that help you identify the current situation. For example, the robot "is holding something." or "has not reached something." 
-                        
-                        REMEMBER: the task name is {task.name}. There should be roughly {round(duration_sec)} annotations in total, so do not annotate every {time_gap} seconds. Only annotate when there is a critical change in the scene or robot action.
+                        REMEMBER: the task name is {task.name}. 
                         
                         An example action is "reach for the black bowl by the white plate." An example reasoning is "I am reaching for the black bowl by the white plate because I need to pick it up and place it in the caddy. The bowl is on the left side of the plate, and I need to ensure I grasp it securely."
                         
-                        IMPORTANT: It is imperative that the timestamps actually line up with the current actions the robot is taking. The current time in the video is {time_in_sec} seconds. There are {round(duration_sec - time_in_sec)} seconds remaining in the video. The current frame is {frame_count} out of {total_frames} frames. 
-                        
                         IMPORTANT: It is imperative that you do not hallucinate actions or reasonings. For instance, closely examine the eye-in-hand view of the robot. If the robot is not grasping an object, do not annotate it as such. 
-                        
-                        3. Examine the context. Are there any timestamps or durations that should be changed? If so, update the start and end times and review the actions and reasonings. Do the actions and reasonings of recent annotations conflict with your current understanding of the scene? If so, update them accordingly. Specifically, examine the most recent annotation and the timestamp. The entire context should cover the entire vide up to this point, so if the current time is {time_in_sec} seconds, then the context should cover all annotations up to this point. AVOID excessive annotations every {time_gap} seconds. Only annotate when there is a critical change in the scene or robot action.
-                        
-                        4. Finally, begin output and generate the JSON file containing the annotations of the entire video up to this point. 
+
                         """
                                 # print(PROMPT)
                                 context_filename = f"{demo_name}_context_{frame_count:04d}.json"
@@ -239,7 +234,7 @@ def main():
                                         contents=[
                                             prev_frame_uploaded, 
                                             next_frame_uploaded, 
-                                             
+                                            JSON.stringfy(context),
                                             PROMPT
                                         ],
                                         config={
