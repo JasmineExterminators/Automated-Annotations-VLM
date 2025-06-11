@@ -31,15 +31,28 @@ def overlay_text(
     annotations,
     OUTPUT_FRAME_WIDTH,
     OUTPUT_FRAME_HEIGHT,
+    time_gap,  # Time in seconds between annotation changes
     font=cv2.FONT_HERSHEY_PLAIN,
-    font_scale=1.0,  # Slightly larger for higher-res, but still small
-    font_color=(0, 0, 0),
-    thickness=2,
+    font_scale=0.7,  # Reduced font size
+    thickness=1,  # Reduced thickness for smaller text
 ):
     """
     Overlays specified text onto an MP4 video using only OpenCV.
-    Now overlays directly on the video, with a translucent white background for the annotation.
+    Changes annotations every time_gap seconds.
+    Layout: Video takes up bottom 2/3, annotation overlay takes up top 1/3.
     """
+    current_annotation_index = 0
+    last_change_time = 0
+
+    # Calculate dimensions for the new layout
+    overlay_height = OUTPUT_FRAME_HEIGHT // 3
+    video_height = OUTPUT_FRAME_HEIGHT - overlay_height
+    video_width = OUTPUT_FRAME_WIDTH
+
+    # Define colors for action and reasoning
+    action_color = (0, 0, 255)  # Red in BGR
+    reasoning_color = (255, 0, 0)  # Blue in BGR
+
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -47,83 +60,88 @@ def overlay_text(
 
         current_time_sec = frame_count / fps
 
-        # Resize frame to output size (3x for higher resolution)
-        if (frame.shape[1], frame.shape[0]) != (OUTPUT_FRAME_WIDTH, OUTPUT_FRAME_HEIGHT):
-            frame = cv2.resize(frame, (OUTPUT_FRAME_WIDTH, OUTPUT_FRAME_HEIGHT), interpolation=cv2.INTER_CUBIC)
+        # Check if it's time to change the annotation
+        if current_time_sec - last_change_time >= time_gap:
+            current_annotation_index = (current_annotation_index + 1) % len(annotations)
+            last_change_time = current_time_sec
 
-        annot = annotations[0]
+        # Create a blank frame for the new layout
+        combined_frame = np.zeros((OUTPUT_FRAME_HEIGHT, OUTPUT_FRAME_WIDTH, 3), dtype=np.uint8)
+        
+        # Resize the video frame to fit the bottom section
+        video_frame = cv2.resize(frame, (video_width, video_height), interpolation=cv2.INTER_CUBIC)
+        
+        # Place the video frame in the bottom section
+        combined_frame[overlay_height:, :] = video_frame
+
+        # Create the overlay section (top 1/3)
+        overlay = np.ones((overlay_height, OUTPUT_FRAME_WIDTH, 3), dtype=np.uint8) * 255  # White background
+
+        annot = annotations[current_annotation_index]
         action_words = annot["action"]
         reasoning_words = annot["reasoning"]
-        annot_start_time = annot["start"]
-        annot_end_time = annot["end"]
-        annot_duration_time = annot["duration"]
 
-        text_to_overlay = f"ACTION: {action_words}  REASONING: {reasoning_words}"
+        # Prepare action and reasoning text separately
+        action_text = f"ACTION: {action_words}"
+        reasoning_text = f"REASONING: {reasoning_words}"
 
         # Calculate max text width (full width minus padding)
         max_text_width = OUTPUT_FRAME_WIDTH - 60  # 30px padding on each side
-        lines = wrap_text(text_to_overlay, font, font_scale, thickness, max_text_width)
-        (text_width, text_height), baseline = cv2.getTextSize(
-            text_to_overlay, font, font_scale, thickness
-        )
-        line_height = text_height + baseline + 12
-        total_text_height = line_height * len(lines)
-        x, y = 30, 60  # 30px from left, 60px from top
+        
+        # Wrap each text separately
+        action_lines = wrap_text(action_text, font, font_scale, thickness, max_text_width)
+        reasoning_lines = wrap_text(reasoning_text, font, font_scale, thickness, max_text_width)
+        
+        # Calculate text dimensions
+        (_, text_height), baseline = cv2.getTextSize(action_text, font, font_scale, thickness)
+        line_height = text_height + baseline + 8  # Reduced spacing between lines
+        
+        # Calculate total height for both sections
+        total_action_height = line_height * len(action_lines)
+        total_reasoning_height = line_height * len(reasoning_lines)
+        total_text_height = total_action_height + total_reasoning_height + 10  # 10px gap between sections
+        
+        # Center the text vertically in the overlay section
+        start_y = (overlay_height - total_text_height) // 2 + text_height
+        x = 30  # 30px from left
 
-        # Only use the top half of the screen for annotation
-        max_annotation_height = OUTPUT_FRAME_HEIGHT // 2 - 40  # 40px padding from half
-        if total_text_height > max_annotation_height:
-            # If text is too tall, reduce font_scale (minimum 0.5)
-            while total_text_height > max_annotation_height and font_scale > 0.5:
-                font_scale -= 0.1
-                lines = wrap_text(text_to_overlay, font, font_scale, thickness, max_text_width)
-                (text_width, text_height), baseline = cv2.getTextSize(
-                    text_to_overlay, font, font_scale, thickness
-                )
-                line_height = text_height + baseline + 12
-                total_text_height = line_height * len(lines)
-
-        if current_time_sec <= annot_end_time:
-            # Draw translucent white rectangle as background for annotation (top half only)
-            overlay = frame.copy()
-            rect_top_left = (20, y - text_height - 20)
-            rect_bottom_right = (OUTPUT_FRAME_WIDTH - 20, y + total_text_height + 20)
-            if rect_bottom_right[1] > OUTPUT_FRAME_HEIGHT // 2:
-                rect_bottom_right = (rect_bottom_right[0], OUTPUT_FRAME_HEIGHT // 2)
-            cv2.rectangle(
+        # Draw action lines
+        for i, line in enumerate(action_lines):
+            y_line = start_y + i * line_height
+            cv2.putText(
                 overlay,
-                rect_top_left,
-                rect_bottom_right,
-                (255, 255, 255),
-                thickness=-1
+                line,
+                (x, y_line),
+                font,
+                font_scale,
+                action_color,
+                thickness,
+                cv2.LINE_AA
             )
-            alpha = 0.7  # Transparency factor
-            frame = cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0)
 
-            # Draw each line of text
-            for i, line in enumerate(lines):
-                y_line = y + i * line_height
-                if y_line > OUTPUT_FRAME_HEIGHT // 2 - 10:
-                    break  # Don't draw past the top half
-                cv2.putText(
-                    frame,
-                    line,
-                    (x, y_line),
-                    font,
-                    font_scale,
-                    font_color,
-                    thickness,
-                    cv2.LINE_AA
-                )
-            out.write(frame)
-            frame_count += 1
-        else:
-            if len(annotations) != 1:
-                annotations.pop(0)
+        # Draw reasoning lines
+        for i, line in enumerate(reasoning_lines):
+            y_line = start_y + total_action_height + 10 + i * line_height  # 10px gap after action
+            cv2.putText(
+                overlay,
+                line,
+                (x, y_line),
+                font,
+                font_scale,
+                reasoning_color,
+                thickness,
+                cv2.LINE_AA
+            )
+
+        # Place the overlay section in the top portion
+        combined_frame[:overlay_height, :] = overlay
+
+        out.write(combined_frame)
+        frame_count += 1
 
 if __name__ == "__main__":
     # Path to the folder containing all subfolders to be traversed
-    LIBERO_90_PATH = "C:/Users/wuad3/Documents/CMU/Freshman Year/Research/SAMPLE"
+    LIBERO_90_PATH = "C:/Users/wuad3/Documents/CMU/Freshman Year/Research/test"
 
     # Iterate through each folder (task folder)
     for root, dirs, files in os.walk(LIBERO_90_PATH):
@@ -192,7 +210,8 @@ if __name__ == "__main__":
                     total_frames,
                     annotations,
                     OUTPUT_FRAME_WIDTH,
-                    OUTPUT_FRAME_HEIGHT
+                    OUTPUT_FRAME_HEIGHT,
+                    time_gap=1.0  # Change annotation every 1 second
                 )
 
                 # Release everything when done
