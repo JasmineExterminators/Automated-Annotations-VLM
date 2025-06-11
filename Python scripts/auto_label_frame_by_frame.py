@@ -1,19 +1,19 @@
+# To use this file, search for TODO and modfiy the lines accordingly. The available files to enter 
+# are first_file_uploaded, prev_file_uploaded, next_file_uploaded, and PROMPT. The past history 
+# is uploaded via the prompt as {json.dumps(context, indent=2)}.
+
 import os
 import json
 import cv2
-import numpy as np
 from pathlib import Path
-from fpdf import FPDF
-from google import genai
+from google import genai # import as pip install google-genai
 from pydantic import BaseModel
-import base64
 
 # Configuration
-# client = genai.Client(api_key="AIzaSyAgWE8j36-f_NyfGPEHBMjgMXcMOMjaJjI") # cmu-aidm
-client = genai.Client(api_key="AIzaSyA3JNDI0RArQ2V7X_eF_P6Y3DX8gP5hGDQ") # naveen
-FRAME_GAP = 10
+client = genai.Client(api_key="AIzaSyDjnJusDy6ZyKhylNP-qot_ZgRSJOaoepo") # robyn's
+FRAME_GAP = 20
 VIDEOS_PATH = "C:/Users/wuad3/Documents/CMU/Freshman Year/Research/SAMPLE"
-MODEL = "gemini-2.0-flash"
+MODEL = "gemini-2.5-pro-preview-03-25"
 FPS = 20
 
 
@@ -152,8 +152,6 @@ def main():
                         demo_name = os.path.splitext(os.path.basename(demo_path))[0]
                         
                         cap = cv2.VideoCapture(demo_path)
-                        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-                        duration_sec = total_frames / FPS
                         frame_count = 0
                         ret, frame = cap.read()
                         
@@ -173,8 +171,11 @@ def main():
                             if frame_count % FRAME_GAP == 0:
                                 print(f"Processing frame {frame_count}...")
                                 
-                                PROMPT = f"""You are a robot performing the task {task.name}. You are given four files. 
-                                1. The first frame of the video, which depicts the initial state of the scene.
+                                PROMPT = f"""You are a robot performing the task {task.name}. You are given three files. 
+                                
+                                # TODO Change this numbered list.
+                                
+                                1. The first frame of the video displaying the initial state of the scene.
                                 2. The previous frame from {time_gap} seconds ago. 
                                 3. The current view of the scene. 
                                 4. The previous context: {json.dumps(context, indent=2)}.
@@ -187,7 +188,9 @@ def main():
                         
                         1. Examine the previous and current frame. Infer what happened between the two frames and what is happening right now. When observing, pay careful attention to the task name, {task.name}. Note object spatial relationships and the robot position. 
                                                 
-                        2. Think about your observations and the past context. Generate an action that the robot should take in the current frame as well as a detailed reasoning for the action. The action annotation is fine-grained. For example, grasping is divided into 2 actions: reach, close the gripper. If the task description highlights spatial relationships, or if there are multiple objects from the same category, then your action and reasoning should also contain these spatial / directional info, such as left / right, front / back. Focus on key visual features that help you identify the current situation. For example, the robot "is holding something." or "has not reached something." 
+                        2. Think about your observations and the past context. Generate an action that the robot should take in the current frame as well as a detailed reasoning for the action. The action annotation is very fine-grained. For example, grasping is divided into 2 actions: reach, close the gripper. 
+                        
+                        If the task description highlights spatial relationships, or if there are multiple objects from the same category, then your action and reasoning should also contain these spatial / directional info, such as left / right, front / back. Focus on key visual features that help you identify the current situation. For example, the robot "is holding something." or "has not reached something." For instance, "lift the bowl upwards and to the left towards the stove."
                         
                         REMEMBER: the task name is {task.name}. 
                         
@@ -215,7 +218,7 @@ def main():
                                     # print(json.dumps(context))
                                     response = client.models.generate_content(
                                         model=MODEL, 
-                                        contents=[first_frame_uploaded, prev_frame_uploaded, next_frame_uploaded, PROMPT],
+                                        contents=[first_frame_uploaded, prev_frame_uploaded, next_frame_uploaded, PROMPT], # TODO CHANGE THIS LINE
                                         config={
                                             "response_mime_type": "application/json",
                                             "response_schema": list[Annotation]
@@ -223,7 +226,6 @@ def main():
                                     )
                                     
                                     print(f"Received response for frame {frame_count}")
-                                    print(f"Response text: {response.text}")
                                     
                                     # Parse response and update context
                                     if response.text:
@@ -251,6 +253,7 @@ def main():
                                 try:
                                     os.remove(next_frame_filename)
                                     os.remove(prev_frame_filename)
+                                    os.remove(first_frame_filename)
                                 except Exception as e:
                                     print(f"Warning: Error cleaning up temporary files: {e}")
                                 time_in_sec += time_gap
