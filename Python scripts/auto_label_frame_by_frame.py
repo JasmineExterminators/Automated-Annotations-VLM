@@ -13,9 +13,10 @@ import numpy as np
 # Configuration
 client = genai.Client(api_key="AIzaSyDjnJusDy6ZyKhylNP-qot_ZgRSJOaoepo") # robyn's
 FRAME_GAP = 20
-VIDEOS_PATH = "C:/Users/wuad3/Documents/CMU/Freshman Year/Research/test"
+VIDEOS_PATH = "C:/Users/wuad3/Documents/CMU/Freshman Year/Research/SAMPLE"
 MODEL = "gemini-2.5-pro-preview-03-25"
-FPS = 20
+# MODEL = "gemini-2.5-flash-preview-05-20"
+FPS = 20 #change to get it from the video lmao
 
 
 PHOTO_X = 10
@@ -193,14 +194,13 @@ def main():
                                 print(f"Processing frame {frame_count}...")
                                 
                                 # TODO Change this numbered list.
-                                
+                                # 4. The previous context: {json.dumps(context, indent=2)}.
                                 PROMPT = f"""You are a robot performing the task {task.name}. You are given four files. 
                                   
                                 1. The first frame of the video displaying the initial state of the scene.                                                            
                                 2. The previous frame from {time_gap} seconds ago. 
                                 3. The current view of the scene. 
-                                4. The previous context: {json.dumps(context, indent=2)}.
-                                
+                                4. The previous context: {json.dumps(context, indent=2)}.                           
                                 
                             The left side shows the front view and the right side shows the view on the grippers of the robot. 
 
@@ -227,7 +227,8 @@ def main():
                                 cv2.imwrite(next_frame_filename, next_frame)
                                 cv2.imwrite(first_frame_filename, first_frame)
                                 
-                                # Save frames to temporary file                                
+                                # Save frames to temporary file   
+                                # TODO Delete what you don't use.                             
                                 prev_frame_uploaded = client.files.upload(file = prev_frame_filename)
                                 next_frame_uploaded = client.files.upload(file = next_frame_filename)
                                 first_frame_uploaded = client.files.upload(file = first_frame_filename)
