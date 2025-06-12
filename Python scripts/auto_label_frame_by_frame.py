@@ -13,7 +13,7 @@ import numpy as np
 # Configuration
 client = genai.Client(api_key="AIzaSyDjnJusDy6ZyKhylNP-qot_ZgRSJOaoepo") # robyn's
 FRAME_GAP = 20
-VIDEOS_PATH = "C:/Users/wuad3/Documents/CMU/Freshman Year/Research/test"
+VIDEOS_PATH = "./SAMPLE"
 MODEL = "gemini-2.5-pro-preview-03-25"
 FPS = 20
 
