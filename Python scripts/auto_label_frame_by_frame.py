@@ -10,6 +10,7 @@ from google import genai # import as pip install google-genai
 from pydantic import BaseModel
 import numpy as np
 import sys
+from google.genai import types
 
 
 # get video path
@@ -23,7 +24,7 @@ import sys
 client = genai.Client(api_key="AIzaSyDjnJusDy6ZyKhylNP-qot_ZgRSJOaoepo") # robyn's
 FRAME_GAP = 20
 # VIDEOS_PATH = sys.argv[1]
-VIDEOS_PATH = "C:/Users/wuad3/Documents/CMU/Freshman Year/Research/SAMPLE"
+VIDEOS_PATH = "./SAMPLE"
 # MODEL = "gemini-2.5-pro-preview-03-25"
 MODEL = "gemini-2.5-flash-preview-05-20"
 FPS = 20 #change to get it from the video lmao
@@ -183,6 +184,12 @@ def main():
                         demo_path = Path(VIDEOS_PATH) / task.name / demo.name
                         demo_name = os.path.splitext(os.path.basename(demo_path))[0]
                         
+                        # Create a file to save thoughts
+                        thoughts_file_path = Path(VIDEOS_PATH) / task.name / f"{demo_name}_thoughts.txt"
+                        with open(thoughts_file_path, 'w', encoding='utf-8') as thoughts_file:
+                            thoughts_file.write(f"Thought summaries for {demo_name}\n")
+                            thoughts_file.write("=" * 50 + "\n\n")
+                        
                         cap = cv2.VideoCapture(demo_path)
                         frame_count = 0
                         ret, frame = cap.read()
@@ -245,32 +252,44 @@ def main():
                                 
                                 try:
                                     print(f"Making API call for frame {frame_count}...")
-                                    # print(json.dumps(context))
                                     response = client.models.generate_content(
                                         model=MODEL, 
-                                        contents=[current_frame_uploaded, PROMPT], # TODO CHANGE THIS LINE
-                                        config={
-                                            "response_mime_type": "application/json",
-                                            "response_schema": list[Annotation]
-                                        }
+                                        contents=[current_frame_uploaded, PROMPT],
+                                        config = types.GenerateContentConfig(
+                                            response_mime_type="application/json",
+                                            response_schema=list[Annotation],
+                                            thinking_config=types.ThinkingConfig(
+                                                include_thoughts=True
+                                            )
+                                        )
                                     )
                                     
                                     print(f"Received response for frame {frame_count}")
                                     
                                     # Parse response and update context
-                                    if response.text:
-                                        try:
-                                            new_context = json.loads(response.text)
-                                            if isinstance(new_context, list):
-                                                context.append(new_context)
+                                    for part in response.candidates[0].content.parts:
+                                        if not part.text:
+                                            continue
+                                        if part.thought:
+                                            thought_text = f"Frame {frame_count}:\n{part.text}\n"
+                                            print("Thought summary:")
+                                            print(thought_text)
+                                            # Append thought to the thoughts file
+                                            with open(thoughts_file_path, 'a', encoding='utf-8') as thoughts_file:
+                                                thoughts_file.write(thought_text + "\n" + "-" * 50 + "\n\n")
+                                        else:
+                                            if response.text:
+                                                try:
+                                                    new_context = json.loads(response.text)
+                                                    if isinstance(new_context, list):
+                                                        context.append(new_context)
+                                                    else:
+                                                        print(f"Warning: Unexpected response format: {response.text}")
+                                                except json.JSONDecodeError as e:
+                                                    print(f"Error parsing Gemini response: {e}")
                                             else:
-                                                print(f"Warning: Unexpected response format: {response.text}")
-                                        except json.JSONDecodeError as e:
-                                            print(f"Error parsing Gemini response: {e}")
-                                            # print(f"Raw response: {response.text}")
-                                    else:
-                                        print("Warning: Empty response from Gemini")
-                                        
+                                                print("Warning: Empty response from Gemini")
+                                                
                                 except Exception as e:
                                     print(f"Error during Gemini API call: {e}")
                                     print(f"Error type: {type(e)}")
