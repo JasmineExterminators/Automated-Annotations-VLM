@@ -9,23 +9,13 @@ from pathlib import Path
 from google import genai # import as pip install google-genai
 from pydantic import BaseModel
 import numpy as np
-import sys
-
-
-# get video path
-# Ensure VIDEOS_PATH is provided via command-line
-# if len(sys.argv) != 2:
-#      print(f"Usage: python {os.path.basename(__file__)} <VIDEOS_PATH>")
-#      sys.exit(1)
-
 
 # Configuration
 client = genai.Client(api_key="AIzaSyDjnJusDy6ZyKhylNP-qot_ZgRSJOaoepo") # robyn's
 FRAME_GAP = 20
-# VIDEOS_PATH = sys.argv[1]
-VIDEOS_PATH = "C:/Users/wuad3/Documents/CMU/Freshman Year/Research/SAMPLE"
-# MODEL = "gemini-2.5-pro-preview-03-25"
-MODEL = "gemini-2.5-flash-preview-05-20"
+VIDEOS_PATH = "C:/Users/wuad3/Documents/CMU/Freshman Year/Research/SAMPLE2"
+MODEL = "gemini-2.5-pro-preview-03-25"
+# MODEL = "gemini-2.5-flash-preview-05-20"
 FPS = 20 #change to get it from the video lmao
 
 
@@ -204,13 +194,12 @@ def main():
                                 
                                 # TODO Change this numbered list.
                                 # 4. The previous context: {json.dumps(context, indent=2)}.
-                                # 1. The first frame of the video displaying the initial state of the scene.  
+                                # 2. The previous frame from {time_gap} seconds ago. 
+                                # 1. The first frame of the video displaying the initial state of the scene.
                                 PROMPT = f"""You are a robot performing the task {task.name}. You are given two files. 
-                                                                 
+                                                   
                                 1. The current frame that depicts the current state of the scene. 
-                                2. The previous context: {json.dumps(context, indent=2)}.
-                            
-                            WARNING: The previous context is not necessarily accurate. The context DOES NOT gurantee that a previous action has actually been completed. DO NOT depend solely on the previous context. Focus on the current frame and the observations you can make from it.                      
+                                2. The previous context: {json.dumps([item[0]['action'] for item in context], indent=2)}                          
                                 
                             The left side shows the front view and the right side shows the view on the grippers of the robot. 
 
@@ -223,16 +212,17 @@ def main():
                         If the task description highlights spatial relationships, or if there are multiple objects from the same category, then your action and reasoning should also contain these spatial / directional info, such as left / right, front / back. Focus on key visual features that help you identify the current situation. For example, the robot "is holding something." or "has not reached something." For instance, "lift the bowl upwards and to the left towards the stove."
                         
                         REMEMBER: the task name is {task.name}. 
-                        
+
+                                               
                         An example action is "reach for the black bowl by the white plate." An example reasoning is "I am reaching for the black bowl by the white plate because I need to pick it up and place it in the caddy. The bowl is on the left side of the plate, and I need to ensure I grasp it securely."
                         
                         IMPORTANT: It is imperative that you do not hallucinate actions or reasonings. For instance, closely examine the eye-in-hand view of the robot. If the robot is not grasping an object, do not annotate it as such. It is okay for intervals to be annotated similarly or to annotate intermediate actions like "continue holding" or "maintain position" if the robot is not performing a distinct action.
 
                         """
                                 # print(PROMPT)
-                                prev_frame_filename = os.path.join(VIDEOS_PATH, f"{demo_name}_frame_prev.jpg")
-                                current_frame_filename = os.path.join(VIDEOS_PATH, f"{demo_name}_frame_current.jpg")
-                                first_frame_filename = os.path.join(VIDEOS_PATH, f"{demo_name}_frame_first.jpg")
+                                prev_frame_filename = f"{demo_name}_frame_prevAH.jpg"
+                                current_frame_filename = f"{demo_name}_frame_currentAH.jpg"
+                                first_frame_filename = f"{demo_name}_frame_firstAH.jpg"
                                 cv2.imwrite(prev_frame_filename, prev_frame)
                                 cv2.imwrite(current_frame_filename, current_frame)
                                 cv2.imwrite(first_frame_filename, first_frame)

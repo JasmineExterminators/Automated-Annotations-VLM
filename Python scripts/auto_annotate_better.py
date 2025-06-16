@@ -29,8 +29,8 @@ MODEL = "gemini-2.5-flash-preview-05-20"
 FPS = 20 #change to get it from the video lmao
 
 
-PHOTO_X = 10
-PHOTO_Y = 10
+PHOTO_X = 50
+PHOTO_Y = 50
 PHOTO_W = 190
 class Annotation(BaseModel):
     observation: str
@@ -189,12 +189,19 @@ def main():
                         
                         # initialize stuff
                         prev_frame = frame.copy() if ret else None
+                        cv2.putText(prev_frame, "Previous Frame", (PHOTO_X, PHOTO_Y), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 255), 1)
+                        
                         first_frame = frame.copy() if ret else None
+                        cv2.putText(first_frame, "First Frame", (PHOTO_X, PHOTO_Y), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 255), 1)
+                        
+                        
                         context = []  # Initialize as empty list instead of [{}]
                         time_gap = (1 / FPS) * FRAME_GAP # time between frames in seconds
                         print("reading video...")
                         while True:
                             ret, current_frame = cap.read()
+                            prev_temp = current_frame.copy() 
+                            cv2.putText(current_frame, "Current Frame", (PHOTO_X, PHOTO_Y), cv2.FONT_HERSHEY_SIMPLEX, 0.25, (255, 255, 255), 1)
                             if not ret:
                                 print("Finished reading video.")
                                 break
@@ -229,10 +236,21 @@ def main():
                         IMPORTANT: It is imperative that you do not hallucinate actions or reasonings. For instance, closely examine the eye-in-hand view of the robot. If the robot is not grasping an object, do not annotate it as such. It is okay for intervals to be annotated similarly or to annotate intermediate actions like "continue holding" or "maintain position" if the robot is not performing a distinct action.
 
                         """
+                        
+                       
+                        
                                 # print(PROMPT)
                                 prev_frame_filename = os.path.join(VIDEOS_PATH, f"{demo_name}_frame_prev.jpg")
                                 current_frame_filename = os.path.join(VIDEOS_PATH, f"{demo_name}_frame_current.jpg")
                                 first_frame_filename = os.path.join(VIDEOS_PATH, f"{demo_name}_frame_first.jpg")
+                                
+                                # overlay labels onto images
+                                
+                                
+                                
+                                
+                                
+                                
                                 cv2.imwrite(prev_frame_filename, prev_frame)
                                 cv2.imwrite(current_frame_filename, current_frame)
                                 cv2.imwrite(first_frame_filename, first_frame)
@@ -285,7 +303,8 @@ def main():
                                     os.remove(first_frame_filename)
                                 except Exception as e:
                                     print(f"Warning: Error cleaning up temporary files: {e}")
-                                prev_frame = current_frame.copy() 
+                                prev_frame = prev_temp
+                                cv2.putText(prev_frame, "Previous Frame", (PHOTO_X, PHOTO_Y), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 255), 1)
                             frame_count += 1
                             
                         
