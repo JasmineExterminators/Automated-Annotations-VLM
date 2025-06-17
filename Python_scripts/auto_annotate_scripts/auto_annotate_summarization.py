@@ -2,6 +2,18 @@
 # are first_file_uploaded, prev_file_uploaded, next_file_uploaded, and PROMPT. The past history 
 # is uploaded via the prompt as {json.dumps(context, indent=2)}.
 
+
+
+# Task plan 
+# history of past commands
+# describe what has been completed and what has not been completed
+# focus view wrist camera
+
+# fixed context window, separately
+
+
+
+
 import os
 import json
 import cv2
