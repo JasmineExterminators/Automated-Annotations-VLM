@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 #
-# Usage: ./run_parallel.sh path/to/processor.py /path/to/parent_videos_dir
+# Usage: ./run_parallel_on_cores.sh path/to/processor.py /path/to/parent_videos_dir
 #
 # Loops over each subdirectory under the parent directory,
 # launching one instance of processor.py per subfolder,
-# up to NPROC parallel jobs. Cleans up child processes on exit.
+# pinned to its own CPU core (round-robin), and
+# cleans up child processes on exit.
 
 set -euo pipefail
 IFS=$'\n\t'
@@ -18,7 +19,6 @@ fi
 PYTHON_SCRIPT="$1"
 PARENT_DIR="$2"
 
-# Resolve to absolute paths
 PYTHON_SCRIPT="$(realpath "$PYTHON_SCRIPT")"
 PARENT_DIR="$(realpath "$PARENT_DIR")"
 
@@ -42,36 +42,25 @@ trap cleanup SIGINT SIGTERM
 
 # --- determine core count ---
 if command -v nproc &>/dev/null; then
-  CORES="$(nproc)"
+  TOTAL_CORES="$(nproc)"
 else
-  CORES="$(getconf _NPROCESSORS_ONLN)"
+  TOTAL_CORES="$(getconf _NPROCESSORS_ONLN)"
 fi
-echo "Launching up to $CORES parallel jobs…"
-
-running=0
+echo "Launching jobs on $TOTAL_CORES cores (round-robin)…"
 
 # --- main loop ---
+counter=0
 for subdir in "$PARENT_DIR"/*/; do
   [[ -d "$subdir" ]] || continue
 
-  echo "→ Starting: $subdir"
-  python3 "$PYTHON_SCRIPT" "$subdir" &
+  core=$(( counter % TOTAL_CORES ))
+  echo "→ [$subdir] → core #$core"
+  # bind to core, launch in background
+  taskset -c "$core" python3 "$PYTHON_SCRIPT" "$subdir" &
 
-  (( running++ ))
-  if (( running >= CORES )); then
-    # wait for any one to finish before launching more
-    if wait -n 2>/dev/null; then
-      :
-    else
-      # on older Bash, wait -n may not exist; fallback to wait
-      wait
-    fi
-    # decrement so we keep the throttle correct
-    (( running-- ))
-  fi
+  (( counter++ ))
 done
 
-# Wait for remaining jobs
+# Wait for all to finish
 wait
-
 echo "✅ All jobs complete."

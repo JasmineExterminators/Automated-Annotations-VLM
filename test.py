@@ -1,5 +1,8 @@
 import cv2
 import numpy as np
+import sys
+
+VIDEOS_PATH = sys.argv[1]
 
 def overlay_images(base_img_path, overlay_img_path, output_path, target_size=(224, 224)):
     """
