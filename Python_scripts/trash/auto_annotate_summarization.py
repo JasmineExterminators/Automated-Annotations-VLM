@@ -9,9 +9,6 @@
 # describe what has been completed and what has not been completed
 # focus view wrist camera
 
-# fixed context window, separately
-
-
 
 
 import os

@@ -11,72 +11,309 @@ from pydantic import BaseModel
 import numpy as np
 import sys
 from google.genai import types
-from prompt_template import get_prompt
+from prompt_template import get_annotate_prompt, get_task_prompt
 
 # get video path
-# Ensure VIDEOS_PATH is provided via command-line
 if len(sys.argv) < 2:
      print(f"Usage: python {os.path.basename(__file__)} <VIDEOS_PATH>")
      sys.exit(1)
 
-
 # Configuration
-client = genai.Client(api_key="AIzaSyDjnJusDy6ZyKhylNP-qot_ZgRSJOaoepo") # robyn's
+API_KEY = "AIzaSyDjnJusDy6ZyKhylNP-qot_ZgRSJOaoepo" # robyn's
 FRAME_GAP = 20
 VIDEOS_PATH = sys.argv[1]
-# VIDEOS_PATH = "C:/Users/wuad3/Documents/CMU/Freshman Year/Research/test"
 MODEL = "gemini-2.5-pro-preview-03-25"
 # MODEL = "gemini-2.5-flash-preview-05-20"
 FPS = 20 #change to get it from the video lmao
 
-
+# position of the label (previous, current) on each annotated frame
+# will move later
 PHOTO_X = 175
 PHOTO_Y = 10
+
+client = genai.Client(api_key= API_KEY) 
+
 class Annotation(BaseModel):
     observation: str
     action: str
     reasoning: str
+    summary: str
 
-def wrap_text(text, font, font_scale, thickness, max_width):
-    """Splits text into lines so each line fits within max_width pixels."""
-    words = text.split()
-    lines = []
-    current_line = ""
-    for word in words:
-        test_line = current_line + (" " if current_line else "") + word
-        (w, _), _ = cv2.getTextSize(test_line, font, font_scale, thickness)
-        if w > max_width and current_line:
-            lines.append(current_line)
-            current_line = word
-        else:
-            current_line = test_line
-    if current_line:
-        lines.append(current_line)
-    return lines
+class Task(BaseModel):
+    task: str
+    # might expand this
 
-def overlay_text(
-    frame_count,
-    cap,
-    out,
-    fps, 
-    width,
-    height,
-    total_frames,
+# initial prompt to gemini (run once per demo) to get a task list
+def get_task_list(frame_filename, task_name, task_output):
+    frame_upload = client.files.upload(file = frame_filename)
+    prompt = get_task_prompt(task_name)
+    response = client.models.generate_content(
+        model=MODEL,
+        contents=[frame_upload, prompt],
+        config={
+            "response_mime_type": "application/json",
+            "response_schema": list[Task]
+        }
+    )
+    if response.text:
+        task_list = json.loads(response.text)
+        # Save task list to a text file
+        task_file_path = task_output + '/tasks.txt'
+        with open(task_file_path, 'w', encoding='utf-8') as f:
+            f.write(f"Task List for {task_name}\n")
+            f.write("=" * 50 + "\n\n")
+            for task in task_list:
+                f.write(f"Task: {task['task']}\n")
+                f.write("-" * 30 + "\n")
+    return task_list
+    
+# saves the final outputted json of observations, actions, reasonings, and summaries
+def save_formatted_annotations(context, output_path):
+    """
+    Saves the annotation context to a JSON file with proper formatting.
+    
+    Args:
+        context: List of annotation data
+        output_path: Path where the JSON file will be saved
+    """
+    try:
+        formatted_data = []
+        for item in context:
+            formatted_data.append(Annotation(
+                observation=item[0]['observation'],
+                action=item[0]['action'],
+                reasoning=item[0]['reasoning'],
+                summary=item[0]["summary"]
+            ).model_dump())
+        
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(formatted_data, f, indent=4, ensure_ascii=False)
+        print(f"Successfully saved JSON to {output_path}")
+        return formatted_data
+    except Exception as e:
+        print(f"Error saving final annotations: {e}")
+        return None
+
+# prompts gemini for an annotation. run every frame_gap frames for each demo
+def get_frame_annotation(prev_frame_uploaded, current_frame_uploaded, PROMPT, thoughts_file_path, frame_count):
+    """
+    Makes a Gemini API call to get annotations for a frame pair and processes the response.
+    
+    Args:
+        prev_frame_uploaded: Uploaded previous frame
+        current_frame_uploaded: Uploaded current frame
+        PROMPT: The prompt to send to Gemini
+        thoughts_file_path: Path to the thoughts file
+        frame_count: Current frame number
+    
+    Returns:
+        list: New context data if successful, None if failed
+    """
+    try:
+        print(f"Making API call for frame {frame_count}...")
+        response = client.models.generate_content(
+            model=MODEL, 
+            contents=[prev_frame_uploaded, current_frame_uploaded, PROMPT],
+            config = types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=list[Annotation],
+                thinking_config=types.ThinkingConfig(
+                    include_thoughts=True
+                )
+            )
+        )
+        
+        print(f"Received response for frame {frame_count}")
+        
+        # Parse response and update context
+        for part in response.candidates[0].content.parts:
+            if not part.text:
+                continue
+            if part.thought:
+                thought_text = f"Frame {frame_count}:\n{part.text}\n"
+                # Append thought to the thoughts file
+                with open(thoughts_file_path, 'a', encoding='utf-8') as thoughts_file:
+                    thoughts_file.write(thought_text + "\n" + "-" * 50 + "\n\n")
+            else:
+                if response.text:
+                    try:
+                        new_context = json.loads(response.text)
+                        if isinstance(new_context, list):
+                            return new_context
+                        else:
+                            print(f"Warning: Unexpected response format: {response.text}")
+                    except json.JSONDecodeError as e:
+                        print(f"Error parsing Gemini response: {e}")
+                else:
+                    print("Warning: Empty response from Gemini")
+                    
+    except Exception as e:
+        print(f"Error during Gemini API call: {e}")
+        print(f"Error type: {type(e)}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
+    
+    return None
+
+# the main function that processes each demo (generates and saves annotations, renders video)
+def process_demo(demo_path, task_name, VIDEOS_PATH):
+    """
+    Process a single demo video file, generating annotations and creating an annotated video.
+    
+    Args:
+        demo_path: Path to the demo video file
+        task_name: Name of the task being performed
+        VIDEOS_PATH: Base path for output files
+    
+    Returns:
+        bool: True if processing was successful, False otherwise
+    """
+    demo_name = os.path.splitext(os.path.basename(demo_path))[0]
+    
+    thoughts_file_path = Path(VIDEOS_PATH) / f"{demo_name}_thoughts.txt"
+    with open(thoughts_file_path, 'w', encoding='utf-8') as thoughts_file:
+        thoughts_file.write(f"Thought summaries for {demo_name}\n")
+        thoughts_file.write("=" * 50 + "\n\n")
+    cap = cv2.VideoCapture(demo_path)
+    frame_count = 0
+    ret, frame = cap.read()
+    
+    # initialize stuff
+    prev_frame = frame.copy() if ret else None
+    cv2.putText(prev_frame, "Previous Frame", (PHOTO_X, PHOTO_Y), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0,0,0), 4)
+    cv2.putText(prev_frame, "Previous Frame", (PHOTO_X, PHOTO_Y), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 255), 1)
+    
+    first_frame = frame.copy() if ret else None
+    cv2.putText(first_frame, "First Frame", (PHOTO_X, PHOTO_Y), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 0, 0), 4)
+    cv2.putText(first_frame, "First Frame", (PHOTO_X, PHOTO_Y), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 255), 1)
+    first_frame_filename = os.path.join(VIDEOS_PATH, f"{demo_name}_frame_first.jpg")
+    cv2.imwrite(first_frame_filename, first_frame)
+    
+    context = []  # Initialize as empty list instead of [{}]
+    time_gap = (1 / FPS) * FRAME_GAP # time between frames in seconds
+    task_list = get_task_list(first_frame_filename, task_name, VIDEOS_PATH)
+    print("reading video...")
+    while True:
+        ret, current_frame = cap.read()
+        
+        if not ret:
+            print("Finished reading video.")
+            break
+        if frame_count % FRAME_GAP == 0:
+            print(f"Processing frame {frame_count}...")
+            prev_temp = current_frame.copy() 
+            cv2.putText(current_frame, "Current Frame", (PHOTO_X, PHOTO_Y), cv2.FONT_HERSHEY_SIMPLEX, 0.25, (0,0,0), 4)
+            cv2.putText(current_frame, "Current Frame", (PHOTO_X, PHOTO_Y), cv2.FONT_HERSHEY_SIMPLEX, 0.25, (255, 255, 255), 1)
+            
+            PROMPT = get_annotate_prompt(task_name, json.dumps([item[0]['summary'] for item in context]), time_gap, task_list)
+            print(PROMPT)                          
+        
+            prev_frame_filename = os.path.join(VIDEOS_PATH, f"{demo_name}_frame_prev.jpg")
+            current_frame_filename = os.path.join(VIDEOS_PATH, f"{demo_name}_frame_current.jpg")
+            
+            # temporarily save frames
+            cv2.imwrite(prev_frame_filename, prev_frame)
+            cv2.imwrite(current_frame_filename, current_frame)
+            
+            # upload frames  
+            prev_frame_uploaded = client.files.upload(file = prev_frame_filename)
+            current_frame_uploaded = client.files.upload(file = current_frame_filename)
+            
+            new_annotation = get_frame_annotation(prev_frame_uploaded, current_frame_uploaded, PROMPT, thoughts_file_path, frame_count)
+            if new_annotation is not None:
+                context.append(new_annotation)
+            
+            # Clean up temporary files
+            try:
+                os.remove(current_frame_filename)
+                os.remove(prev_frame_filename)
+                os.remove(first_frame_filename)
+            except Exception as e:
+                print(f"Warning: Error cleaning up temporary files: {e}")
+            prev_frame = prev_temp
+            cv2.putText(prev_frame, "Previous Frame", (PHOTO_X, PHOTO_Y), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0,0,0), 4)
+            cv2.putText(prev_frame, "Previous Frame", (PHOTO_X, PHOTO_Y), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 255), 1)
+        frame_count += 1
+        
+    cap.release()
+    
+    # Save final annotations
+    output_annotations_path = Path(VIDEOS_PATH) / f"{demo_name}.json"
+    formatted_data = save_formatted_annotations(context, output_annotations_path)
+    if formatted_data is None:
+        return False
+
+    # Render and save the annotated video
+    output_video_path = Path(VIDEOS_PATH) / f"{demo_name}_annotated.mp4"
+    render_annotated_video(
+        demo_path,
+        output_video_path,
+        formatted_data,
+        time_gap
+    )
+    return True
+
+# renders the annotated video with action and reasoning above the video
+def render_annotated_video(
+    video_path,
+    output_path,
     annotations,
-    OUTPUT_FRAME_WIDTH,
-    OUTPUT_FRAME_HEIGHT,
     time_gap,  # Time in seconds between annotation changes
     font=cv2.FONT_HERSHEY_PLAIN,
     font_scale=0.7,  # Reduced font size
     thickness=1,  # Reduced thickness for smaller text
 ):
     """
-    Overlays specified text onto an MP4 video using only OpenCV.
+    Renders an annotated video with text overlays.
     Changes annotations every time_gap seconds.
     Layout: Video takes up bottom 2/3, annotation overlay takes up top 1/3.
     """
+    def wrap_text(text, font, font_scale, thickness, max_width):
+        """Splits text into lines so each line fits within max_width pixels."""
+        words = text.split()
+        lines = []
+        current_line = ""
+        for word in words:
+            test_line = current_line + (" " if current_line else "") + word
+            (w, _), _ = cv2.getTextSize(test_line, font, font_scale, thickness)
+            if w > max_width and current_line:
+                lines.append(current_line)
+                current_line = word
+            else:
+                current_line = test_line
+        if current_line:
+            lines.append(current_line)
+        return lines
+
+    # Open the input video
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        print(f"Error: Could not open video file '{video_path}'. Check path or file integrity.")
+        return
+
+    # Get video properties
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    duration_sec = total_frames / fps
+    print(f"Input video properties: {width}x{height} @ {fps} FPS, {total_frames} frames ({duration_sec:.2f} seconds).")
+
+    # Set output dimensions
+    OUTPUT_FRAME_WIDTH = width * 3
+    OUTPUT_FRAME_HEIGHT = height * 3
+
+    # Initialize video writer
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(str(output_path), fourcc, fps, (OUTPUT_FRAME_WIDTH, OUTPUT_FRAME_HEIGHT))
+    if not out.isOpened():
+        print(f"Error: Could not open video writer for '{output_path}'. Check codec or permissions.")
+        cap.release()
+        return
+
     current_annotation_index = 0
     last_change_time = 0
+    frame_count = 0
 
     # Calculate dimensions for the new layout
     overlay_height = OUTPUT_FRAME_HEIGHT // 3
@@ -173,189 +410,19 @@ def overlay_text(
         out.write(combined_frame)
         frame_count += 1
 
+    # Clean up
+    cap.release()
+    out.release()
+    print(f"Video processing complete for '{output_path}'.")
+
 def main():
-    # print("made it")
     with os.scandir(VIDEOS_PATH) as demos:
+        task_name = os.path.basename(VIDEOS_PATH)
         for demo in demos:
             if demo.name.endswith(".mp4") and demo.name.startswith("demo_") and demo.name[5:-4].isdigit():
                 demo_path = Path(VIDEOS_PATH) / demo.name
-                demo_name = os.path.splitext(os.path.basename(demo_path))[0]
-                
-                thoughts_file_path = Path(VIDEOS_PATH) / f"{demo_name}_thoughts.txt"
-                with open(thoughts_file_path, 'w', encoding='utf-8') as thoughts_file:
-                    thoughts_file.write(f"Thought summaries for {demo_name}\n")
-                    thoughts_file.write("=" * 50 + "\n\n")
-                cap = cv2.VideoCapture(demo_path)
-                frame_count = 0
-                ret, frame = cap.read()
-                
-                # initialize stuff
-                prev_frame = frame.copy() if ret else None
-                cv2.putText(prev_frame, "Previous Frame", (PHOTO_X, PHOTO_Y), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0,0,0), 4)
-                cv2.putText(prev_frame, "Previous Frame", (PHOTO_X, PHOTO_Y), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 255), 1)
-                
-                first_frame = frame.copy() if ret else None
-                cv2.putText(first_frame, "First Frame", (PHOTO_X, PHOTO_Y), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 0, 0), 4)
-                cv2.putText(first_frame, "First Frame", (PHOTO_X, PHOTO_Y), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 255), 1)
-                
-                context = []  # Initialize as empty list instead of [{}]
-                time_gap = (1 / FPS) * FRAME_GAP # time between frames in seconds
-                print("reading video...")
-                while True:
-                    ret, current_frame = cap.read()
-                    
-                    if not ret:
-                        print("Finished reading video.")
-                        break
-                    if frame_count % FRAME_GAP == 0:
-                        print(f"Processing frame {frame_count}...")
-                        prev_temp = current_frame.copy() 
-                        cv2.putText(current_frame, "Current Frame", (PHOTO_X, PHOTO_Y), cv2.FONT_HERSHEY_SIMPLEX, 0.25, (0,0,0), 4)
-                        cv2.putText(current_frame, "Current Frame", (PHOTO_X, PHOTO_Y), cv2.FONT_HERSHEY_SIMPLEX, 0.25, (255, 255, 255), 1)
-                        
-                        PROMPT = get_prompt(os.path.basename(VIDEOS_PATH), json.dumps(context, indent=2), time_gap)                          
-                    
-                        prev_frame_filename = os.path.join(VIDEOS_PATH, f"{demo_name}_frame_prev.jpg")
-                        current_frame_filename = os.path.join(VIDEOS_PATH, f"{demo_name}_frame_current.jpg")
-                        first_frame_filename = os.path.join(VIDEOS_PATH, f"{demo_name}_frame_first.jpg")
-                        
-                        # overlay labels onto images
-                        cv2.imwrite(prev_frame_filename, prev_frame)
-                        cv2.imwrite(current_frame_filename, current_frame)
-                        cv2.imwrite(first_frame_filename, first_frame)
-                        
-                        # Save frames to temporary file   
-                        prev_frame_uploaded = client.files.upload(file = prev_frame_filename)
-                        current_frame_uploaded = client.files.upload(file = current_frame_filename)
-                        first_frame_uploaded = client.files.upload(file = first_frame_filename)
-                        
-                        try:
-                            print(f"Making API call for frame {frame_count}...")
-                            PROMPT = get_prompt(os.path.basename(VIDEOS_PATH), json.dumps(context, indent=2), time_gap)
-                            response = client.models.generate_content(
-                                model=MODEL, 
-                                contents=[first_frame_uploaded, prev_frame_uploaded, current_frame_uploaded, PROMPT],
-                                config = types.GenerateContentConfig(
-                                    response_mime_type="application/json",
-                                    response_schema=list[Annotation],
-                                    thinking_config=types.ThinkingConfig(
-                                        include_thoughts=True
-                                    )
-                                )
-                            )
-                            
-                            print(f"Received response for frame {frame_count}")
-                            
-                            # Parse response and update context
-                            for part in response.candidates[0].content.parts:
-                                if not part.text:
-                                    continue
-                                if part.thought:
-                                    thought_text = f"Frame {frame_count}:\n{part.text}\n"
-                                    print("Thought summary:")
-                                    print(thought_text)
-                                    # Append thought to the thoughts file
-                                    with open(thoughts_file_path, 'a', encoding='utf-8') as thoughts_file:
-                                        thoughts_file.write(thought_text + "\n" + "-" * 50 + "\n\n")
-                                else:
-                                    if response.text:
-                                        try:
-                                            new_context = json.loads(response.text)
-                                            if isinstance(new_context, list):
-                                                context.append(new_context)
-                                            else:
-                                                print(f"Warning: Unexpected response format: {response.text}")
-                                        except json.JSONDecodeError as e:
-                                            print(f"Error parsing Gemini response: {e}")
-                                    else:
-                                        print("Warning: Empty response from Gemini")
-                                
-                        except Exception as e:
-                            print(f"Error during Gemini API call: {e}")
-                            print(f"Error type: {type(e)}")
-                            import traceback
-                            print(f"Traceback: {traceback.format_exc()}")
-                            continue
-                        
-                        # Clean up temporary files
-                        try:
-                            os.remove(current_frame_filename)
-                            os.remove(prev_frame_filename)
-                            os.remove(first_frame_filename)
-                        except Exception as e:
-                            print(f"Warning: Error cleaning up temporary files: {e}")
-                        prev_frame = prev_temp
-                        cv2.putText(prev_frame, "Previous Frame", (PHOTO_X, PHOTO_Y), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0,0,0), 4)
-                        cv2.putText(prev_frame, "Previous Frame", (PHOTO_X, PHOTO_Y), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (255, 255, 255), 1)
-                    frame_count += 1
-                    
-                cap.release()
-                
-                # Save final annotations
-                output_path = Path(VIDEOS_PATH) / f"{demo_name}.json"
-                try:
-                    formatted_data = []
-                    for item in context:
-                        formatted_data.append(Annotation(
-                            observation=item[0]['observation'],
-                            action=item[0]['action'],
-                            reasoning=item[0]['reasoning']
-                        ).model_dump())
-                    
-                    with open(output_path, "w", encoding="utf-8") as f:
-                        json.dump(formatted_data, f, indent=4, ensure_ascii=False)
-                    print(f"Successfully saved JSON to {output_path}")
-
-                except Exception as e:
-                    print(f"Error saving final annotations: {e}")
-
-                # 3. Render the video with annotations
-                cap = cv2.VideoCapture(demo_path)
-                if not cap.isOpened():
-                    print(f"Error: Could not open video file '{demo_path}'. Check path or file integrity.")
-                    continue
-
-                fps = cap.get(cv2.CAP_PROP_FPS)
-                width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-                duration_sec = total_frames / fps
-                print(f"Input video properties: {width}x{height} @ {fps} FPS, {total_frames} frames ({duration_sec:.2f} seconds).")
-
-                OUTPUT_FRAME_WIDTH = width * 3
-                OUTPUT_FRAME_HEIGHT = height * 3
-
-                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-                output_video_path = Path(VIDEOS_PATH) / f"{demo_name}_annotated.mp4"
-                out = cv2.VideoWriter(str(output_video_path), fourcc, fps, (OUTPUT_FRAME_WIDTH, OUTPUT_FRAME_HEIGHT))
-                if not out.isOpened():
-                    print(f"Error: Could not open video writer for '{output_video_path}'. Check codec or permissions.")
-                    cap.release()
-                    continue
-
-                frame_count = 0
-
-                with open(output_path, "r", encoding="utf-8") as f:
-                    annotations = json.load(f)
-                
-                overlay_text(
-                    frame_count,
-                    cap,
-                    out,
-                    fps, 
-                    width,
-                    height,
-                    total_frames,
-                    annotations,
-                    OUTPUT_FRAME_WIDTH,
-                    OUTPUT_FRAME_HEIGHT,
-                    time_gap
-                )
-
-                cap.release()
-                out.release()
-
-                print(f"Video processing complete for '{output_video_path}'.")
+                if not process_demo(demo_path, task_name, VIDEOS_PATH):
+                    print(f"Failed to process demo: {demo.name}")
 
 if __name__ == "__main__":
     main() 
