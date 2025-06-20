@@ -1,0 +1,27 @@
+Task List for KITCHEN_SCENE2_put_the_black_bowl_at_the_front_on_the_plate_demo
+==================================================
+
+1. Navigate gripper above the front black bowl (metallic bowl at the bottom of the cluster of three)
+Task duration: 2
+------------------------------
+2. Lower gripper towards the front black bowl
+Task duration: 1
+------------------------------
+3. Close gripper to grasp the front black bowl
+Task duration: 1
+------------------------------
+4. Lift the grasped front black bowl
+Task duration: 1
+------------------------------
+5. Move gripper (holding the bowl) above the white plate (circular object with pinkish rim)
+Task duration: 2
+------------------------------
+6. Lower gripper (with bowl) towards the center of the white plate
+Task duration: 1
+------------------------------
+7. Open gripper to release the black bowl onto the plate
+Task duration: 1
+------------------------------
+8. Retract gripper upwards and away from the plate
+Task duration: 1
+------------------------------

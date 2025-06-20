@@ -1,7 +1,7 @@
 from pathlib import Path
 
 # Path to the folder containing all subfolders to be traversed
-FOLDER_PATH = Path(r"C:/Users/wuad3/Documents/CMU/Freshman_Year/Research/Automated-Annotations-VLM/Python_scripts/small_sample_of_videos")
+FOLDER_PATH = Path(r"C:/Users/wuad3/Documents/CMU/Freshman_Year/Research/Automated-Annotations-VLM/Python_scripts/small_sample")
 
 # Exact filenames to keep
 KEEP_FILES = {"demo_0.mp4"}

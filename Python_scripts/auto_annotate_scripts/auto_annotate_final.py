@@ -1,3 +1,12 @@
+# prompt gemini directly to recognize text
+# look for more robot datasets
+
+
+
+
+
+
+
 # To use this file, search for TODO and modfiy the lines accordingly. The available files to enter 
 # are first_file_uploaded, prev_file_uploaded, next_file_uploaded, and PROMPT. The past history 
 # is uploaded via the prompt as {json.dumps(context, indent=2)}.
@@ -40,11 +49,64 @@ class Annotation(BaseModel):
     summary: str
 
 class Task(BaseModel):
-    task: str
+    step_number: int
+    name: str
+    duration: int
     # might expand this
 
+def video_to_pdf(
+    video_path,
+    pdf_path,
+    frame_gap=20,
+    photo_x=10,
+    photo_y=10,
+    photo_w=190
+):
+    """
+    Converts a video to a PDF of frames.
+    Args:
+        video_path (str or Path): Path to the input video file.
+        pdf_path (str or Path): Path to save the output PDF file.
+        frame_gap (int): Number of frames to skip between each PDF page.
+        photo_x (int): X position of the image in the PDF.
+        photo_y (int): Y position of the image in the PDF.
+        photo_w (int): Width of the image in the PDF.
+    Returns:
+        int: Number of frames processed (added to PDF).
+    """
+    import cv2
+    from fpdf import FPDF
+    import os
+    import numpy as np
+    cap = cv2.VideoCapture(str(video_path))
+    frame_count = 0
+    pdf = FPDF()
+    demo_name = os.path.splitext(os.path.basename(str(video_path)))[0]
+    processed_frames = 0
+    print(f"Converting video {video_path} to pdf {pdf_path}...")
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("Finished video to pdf.")
+            break
+        if frame_count % frame_gap == 0:
+            frame_filename = f"{demo_name}frame_{frame_count:04d}.jpg"
+            cv2.imwrite(frame_filename, frame)
+            pdf.add_page()
+            time_seconds = frame_count / 20  # You may want to pass FPS as a parameter
+            pdf.set_xy(photo_x, photo_y - 5)
+            pdf.set_font("Arial", size=10)
+            pdf.cell(0, 10, f"Time: {time_seconds:.2f}s", ln=1)
+            pdf.image(frame_filename, x=photo_x, y=photo_y + 15, w=photo_w)
+            os.remove(frame_filename)
+            processed_frames += 1
+        frame_count += 1
+    cap.release()
+    pdf.output(str(pdf_path))
+    return processed_frames
+
 # initial prompt to gemini (run once per demo) to get a task list
-def get_task_list(frame_filename, task_name, task_output):
+def get_subtask_list(frame_filename, task_name, task_output):
     frame_upload = client.files.upload(file = frame_filename)
     prompt = get_task_prompt(task_name)
     response = client.models.generate_content(
@@ -63,7 +125,8 @@ def get_task_list(frame_filename, task_name, task_output):
             f.write(f"Task List for {task_name}\n")
             f.write("=" * 50 + "\n\n")
             for task in task_list:
-                f.write(f"Task: {task['task']}\n")
+                f.write(f"{task["step_number"]}. {task['name']}\n")
+                f.write(f"Task duration: {task['duration']}\n")
                 f.write("-" * 30 + "\n")
     return task_list
     
@@ -191,7 +254,7 @@ def process_demo(demo_path, task_name, VIDEOS_PATH):
     
     context = []  # Initialize as empty list instead of [{}]
     time_gap = (1 / FPS) * FRAME_GAP # time between frames in seconds
-    task_list = get_task_list(first_frame_filename, task_name, VIDEOS_PATH)
+    task_list = get_subtask_list(first_frame_filename, task_name, VIDEOS_PATH)
     print("reading video...")
     while True:
         ret, current_frame = cap.read()
@@ -205,11 +268,11 @@ def process_demo(demo_path, task_name, VIDEOS_PATH):
             cv2.putText(current_frame, "Current Frame", (PHOTO_X, PHOTO_Y), cv2.FONT_HERSHEY_SIMPLEX, 0.25, (0,0,0), 4)
             cv2.putText(current_frame, "Current Frame", (PHOTO_X, PHOTO_Y), cv2.FONT_HERSHEY_SIMPLEX, 0.25, (255, 255, 255), 1)
             
-            PROMPT = get_annotate_prompt(task_name, json.dumps([item[0]['summary'] for item in context]), time_gap, task_list)
-            print(PROMPT)                          
+            PROMPT = get_annotate_prompt(task_name, json.dumps([item[0]['summary'] for item in context]), time_gap, task_list, frame_count == 0, (frame_count / FPS))
+            # print(PROMPT)                          
         
-            prev_frame_filename = os.path.join(VIDEOS_PATH, f"{demo_name}_frame_prev.jpg")
-            current_frame_filename = os.path.join(VIDEOS_PATH, f"{demo_name}_frame_current.jpg")
+            prev_frame_filename = os.path.join(VIDEOS_PATH, f"{demo_name}_frame_prev_{frame_count}.jpg")
+            current_frame_filename = os.path.join(VIDEOS_PATH, f"{demo_name}_frame_current_{frame_count}.jpg")
             
             # temporarily save frames
             cv2.imwrite(prev_frame_filename, prev_frame)
@@ -227,7 +290,7 @@ def process_demo(demo_path, task_name, VIDEOS_PATH):
             try:
                 os.remove(current_frame_filename)
                 os.remove(prev_frame_filename)
-                os.remove(first_frame_filename)
+                
             except Exception as e:
                 print(f"Warning: Error cleaning up temporary files: {e}")
             prev_frame = prev_temp
@@ -236,7 +299,7 @@ def process_demo(demo_path, task_name, VIDEOS_PATH):
         frame_count += 1
         
     cap.release()
-    
+    os.remove(first_frame_filename)
     # Save final annotations
     output_annotations_path = Path(VIDEOS_PATH) / f"{demo_name}.json"
     formatted_data = save_formatted_annotations(context, output_annotations_path)

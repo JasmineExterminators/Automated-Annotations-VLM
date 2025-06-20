@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Run one Python script per subdirectory in parallel,
+    Run one Python script per subdirectory in parallel (throttled to CPU count),
     then wait for them all and clean up.
 .PARAMETER ParentDir
     Path to the parent directory containing subdirectories.
@@ -10,34 +10,42 @@ param(
     [string]$ParentDir
 )
 
-# Set the Python script path here
+# how many parallel workers to allow
+$maxConcurrent = [Environment]::ProcessorCount
+
+# path to your Python script
 $PythonScript = "C:\Users\wuad3\Documents\CMU\Freshman_Year\Research\Automated-Annotations-VLM\Python_scripts\auto_annotate_scripts\auto_annotate_final.py"
 
-# 1) Start one background job per subdirectory
-$jobs = Get-ChildItem -Directory -Path $ParentDir | ForEach-Object {
-    Start-Job -ScriptBlock {
+# collect all subdirs
+$dirs = Get-ChildItem -Directory -Path $ParentDir
+
+# array to hold our Job objects
+$jobs = @()
+
+foreach ($dir in $dirs) {
+    # if we've reached our limit, wait for one to finish
+    while (($jobs | Where-Object { $_.State -eq 'Running' }).Count -ge $maxConcurrent) {
+        Start-Sleep -Milliseconds 200
+    }
+
+    # launch a new PSJob for this subdirectory
+    $jobs += Start-Job -ScriptBlock {
         param($scriptPath, $dirPath)
         & python.exe $scriptPath $dirPath
-    } -ArgumentList $PythonScript, $_.FullName
+    } -ArgumentList $PythonScript, $dir.FullName
 }
 
-# 2) Block until *those* jobs complete
-# Wait for every job to finish
-Wait-Job -Job $jobs
+# now wait for *all* jobs to finish
+$jobs | Wait-Job
 
-# Check each job for errors
+# inspect results / errors
 foreach ($job in $jobs) {
-    # The child job's final state
-    $state = $job.ChildJobs[0].JobStateInfo.State
-
-    if ($state -ne 'Completed') {
-        Write-Host "❌ Job #$($job.Id) for directory $($job.ChildJobs[0].JobParameters[1]) failed with state: $state"
-
-        # Pull out its error records
-        $errs = $job.ChildJobs[0].Error
-        if ($errs) {
-            "Errors from job:" 
-            $errs | ForEach-Object { "  $_" }
+    $child = $job.ChildJobs[0]
+    if ($child.JobStateInfo.State -ne 'Completed') {
+        Write-Host "❌ Job #$($job.Id) on '$($child.JobParameters[1])' failed: $($child.JobStateInfo.State)"
+        if ($child.Error) {
+            Write-Host "Errors:"
+            $child.Error | ForEach-Object { "  $_" }
         }
     }
     else {
@@ -45,9 +53,8 @@ foreach ($job in $jobs) {
     }
 }
 
-Receive-Job -Job $job[0]
+# (optional) grab the stdout from the very first job to demonstrate Receive-Job
+Receive-Job -Job $jobs[0]
 
-# Clean up
+# clean up all jobs
 $jobs | Remove-Job
-
-

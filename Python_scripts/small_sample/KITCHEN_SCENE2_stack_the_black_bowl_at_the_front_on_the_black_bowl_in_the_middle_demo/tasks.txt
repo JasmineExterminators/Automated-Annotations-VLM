@@ -1,0 +1,30 @@
+Task List for KITCHEN_SCENE2_stack_the_black_bowl_at_the_front_on_the_black_bowl_in_the_middle_demo
+==================================================
+
+1. Move arm to position above the black bowl at the front
+Task duration: 2
+------------------------------
+2. Lower gripper towards the black bowl at the front
+Task duration: 1
+------------------------------
+3. Close gripper to grasp the black bowl at the front
+Task duration: 1
+------------------------------
+4. Lift the grasped black bowl slightly
+Task duration: 1
+------------------------------
+5. Move arm holding the front black bowl to a position above the black bowl in the middle
+Task duration: 2
+------------------------------
+6. Lower the grasped black bowl to stack it on the black bowl in the middle
+Task duration: 1
+------------------------------
+7. Open gripper to release the front black bowl
+Task duration: 1
+------------------------------
+8. Lift arm slightly upwards from the stacked bowls
+Task duration: 1
+------------------------------
+9. Retract arm to a neutral or safe position
+Task duration: 2
+------------------------------
